@@ -322,6 +322,31 @@ export class Frame {
     return this.take(r.length > n ? r.slice(0, n) : r);
   }
 
+  /**
+   * Neue Ansicht mit einer Auswahl konkreter Zeilenindizes, wherein den
+   * Spalten die Werte liegen. Die Spalten werden kopiert, weil sich sonst die
+   * Views gegenseitig in die Fresse schreiben wuerden.
+   *
+   * Wichtig: Das Ergebnis traegt KEINE zusaetzliche Indexierung mehr - die
+   * Spalten enthalten die Auswahl bereits. Sonst wuerden die Originalindizes
+   * ein zweites Mal auf die bereits geschnittenen Spalten angewandt.
+   * @param {number[]|Uint32Array} keep
+   */
+  sliceRows(keep) {
+    const n = keep.length;
+    const cols = {};
+    for (const [name, col] of Object.entries(this.cols)) {
+      const out = new col.data.constructor(n);
+      for (let i = 0; i < n; i++) out[i] = col.data[keep[i]];
+      cols[name] = new Column(name, out, col.type);
+    }
+    const view = new Frame(cols, null);
+    // meta gehoert zum Datensatz, nicht zur Zeilenauswahl - ohne sie fehlen
+    // spaeter nSongs/nArtists (z.B. in /api/session_status).
+    if (this.meta) view.meta = this.meta;
+    return view;
+  }
+
   // ── Gruppen ───────────────────────────────────────────────────────────────
   /**
    * @param {string|Array<string>} names

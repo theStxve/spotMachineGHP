@@ -8,16 +8,23 @@
 
 import { ingestRecords, createBuilder, finalizeFrame, extractZip, isHistoryName } from "./parse.js";
 import { Frame } from "./frame.js";
+import { findOutlierYears, dropOutlierYears, earliestYear } from "./quality.js";
 
 const DB_NAME = "wkmm-store";
 const DB_VERSION = 1;
 const STORE = "dataset";
 
 let frame = null;
+let frameAll = null;      // ungeprueft, wie es aus der Datei kam
+let quality = null;       // { outliers, dropped, includeOutliers }
 let meta = { years: [], total: 0, savedAt: null, fileNames: [] };
 
 export function getFrame() {
   return frame;
+}
+
+export function getQuality() {
+  return quality;
 }
 
 export function getMeta() {
@@ -52,8 +59,25 @@ function getAvailableYearsSafe(f) {
 
 export function clearFrame() {
   frame = null;
+  frameAll = null;
+  quality = null;
   meta = { years: [], total: 0, savedAt: null, fileNames: [] };
   return clearCache();
+}
+
+/**
+ * Schaltet die gepruefte Ansicht um: ohne die auffaelligen Jahrgaenge oder
+ * mit ihnen. Der Import muss dafuer nicht wiederholt werden.
+ */
+export function setIncludeOutliers(include) {
+  if (!frameAll || !quality) return { changed: false, quality };
+  if (!quality.outliers.length) return { changed: false, quality };
+  const want = !!include;
+  if (want === !!quality.includeOutliers) return { changed: false, quality };
+  quality = { ...quality, includeOutliers: want };
+  frame = want ? frameAll : dropOutlierYears(frameAll, quality.outliers).frame;
+  setFrame(frame, { savedAt: meta.savedAt, fileNames: meta.fileNames });
+  return { changed: true, quality };
 }
 
 // ── IndexedDB ────────────────────────────────────────────────────────────────
@@ -106,7 +130,7 @@ export async function saveCache() {
     }
     const payload = {
       cols, types, n: frame.n, dict: frame.meta,
-      at: Date.now(), fileNames: meta.fileNames,
+      at: Date.now(), fileNames: meta.fileNames, quality,
     };
     await withStore("readwrite", (store) => store.put(payload, "current"));
     return true;
@@ -132,7 +156,20 @@ export async function loadCache() {
     // Die Gruppen-Codes liegen im Cache, finalizeFrame muss nicht neu laufen.
     const restored = Frame.build(columns, payload.n);
     restored.meta = payload.dict || { nSongs: 0, nArtists: 0, nAlbums: 0 };
-    setFrame(restored, { savedAt: payload.at, fileNames: payload.fileNames || [] });
+    frameAll = restored;
+    // Ein bereits gepruefter Datensatz bleibt geprueft - die verworfenen
+    // Zeilen liegen nicht im Cache und sollen nicht wieder auftauchen.
+    if (payload.quality && payload.quality.includeOutliers) {
+      quality = { ...payload.quality, includeOutliers: true, dropped: 0 };
+      frame = restored;
+    } else if (payload.quality) {
+      quality = { ...payload.quality, includeOutliers: false };
+      frame = dropOutlierYears(restored, payload.quality.outliers).frame;
+    } else {
+      quality = null;
+      frame = restored;
+    }
+    setFrame(frame, { savedAt: payload.at, fileNames: payload.fileNames || [] });
     return meta;
   } catch (e) {
     console.warn("Cache nicht lesbar:", e && e.message);
@@ -199,8 +236,22 @@ export async function loadFiles(files, onProgress = () => {}) {
   }
 
   const built = finalizeFrame(builder);
-  setFrame(built, { savedAt: Date.now(), fileNames: names });
-  return { meta, fromZip };
+  frameAll = built;
+
+  // Plausibilitaetspruefung: vereinzelte Jahrgaenge mit falschen Zeitstempeln
+  // aus den Auswertungen heraushalten, aber sichtbar und umschaltbar.
+  const report = findOutlierYears(built);
+  const cleaned = dropOutlierYears(built, report.outliers);
+  quality = {
+    outliers: report.outliers,
+    dropped: cleaned.dropped,
+    includeOutliers: false,
+    threshold: report.threshold,
+    earliest: earliestYear(built),
+  };
+  frame = quality.dropped ? cleaned.frame : built;
+  setFrame(frame, { savedAt: Date.now(), fileNames: names });
+  return { meta, quality, fromZip };
 }
 
 /** Fallback fuer ZIPs, deren Dateinamen nicht dem Spotify-Muster entsprechen. */

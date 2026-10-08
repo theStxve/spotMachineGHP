@@ -171,12 +171,56 @@ uploadBtn.addEventListener("click", async () => {
         document.getElementById("tab-nav").classList.remove("hidden");
         document.getElementById("panel-recommend").classList.remove("hidden");
         updateHeaderSyncBtn();
+        applyQuality(data.quality);
         lucide.createIcons();
     } catch(err) {
         hideLoader();
         alert("Fehler beim Hochladen: " + err.message);
     }
 });
+
+// ── MODULE: Datenqualität (auffällige Zeitstempel) ──
+function applyQuality(q) {
+    state.quality = q || null;
+    const box = document.getElementById("data-quality-box");
+    if(!box) return;
+    if(!q || !q.has_outliers) { box.classList.add("hidden"); return; }
+    box.classList.remove("hidden");
+    const years = (q.detail||[]).map(o => `${o.year} (${o.count} Streams)`).join(", ");
+    document.getElementById("quality-badge").textContent = q.include_outliers ? "entfernt" : `${q.dropped} ausgeschlossen`;
+    document.getElementById("quality-text").innerHTML =
+        `In deiner Datei stecken Streams mit offenbar kaputten Zeitstempeln: ${years}. ` +
+        `Sie wurden aus den Auswertungen herausgehalten${q.earliest ? ", frühester Jahrgang im Datensatz: " + q.earliest : ""}. ` +
+        `Falls das doch echte Streams sind, kannst du sie unten einschalten.`;
+    const toggle = document.getElementById("toggle-outliers");
+    if(toggle) toggle.checked = !!q.include_outliers;
+}
+
+const outliersToggle = document.getElementById("toggle-outliers");
+if(outliersToggle) {
+    outliersToggle.addEventListener("change", async () => {
+        showLoader("Wende Datenfilter an...");
+        try {
+            const res = await apiCall("/api/outliers", "POST", { include: outliersToggle.checked });
+            hideLoader();
+            if(res.error) return alert(res.error);
+            state.years = res.years;
+            updateYearSelects();
+            applyQuality(res.quality);
+            showToast(outliersToggle.checked
+                ? `Auffällige Jahrgänge wieder aktiv (${res.total_streams.toLocaleString()} Streams)`
+                : `Auffällige Jahrgänge entfernt (${res.total_streams.toLocaleString()} Streams)`);
+            // Tabs neu laden, damit die Zahlen zur Anzeige passen
+            state.tabCache = {};
+            if(state.activeTab !== 'recommend') {
+                document.querySelector(`.tab-btn[data-tab="${state.activeTab}"]`)?.click();
+            }
+        } catch(e) {
+            hideLoader();
+            alert("Umschalten fehlgeschlagen: " + e.message);
+        }
+    });
+}
 
 // ── MODULE: Settings & Live Sync ──
 function updateHeaderSyncBtn() {
@@ -2711,7 +2755,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 async function checkExistingSession() {
     try {
         const res = await apiCall("/api/session_status");
-        if (res && res.loaded) {
+        if(res.loaded) {
             state.years = res.years;
             state.dataLoaded = true;
             updateYearSelects();
@@ -2719,6 +2763,7 @@ async function checkExistingSession() {
             document.getElementById("tab-nav").classList.remove("hidden");
             document.getElementById("panel-recommend").classList.remove("hidden");
             updateHeaderSyncBtn();
+            applyQuality(res.quality);
             lucide.createIcons();
             showToast(`Datensatz aktiv: ${res.total_streams.toLocaleString()} Streams`);
         }

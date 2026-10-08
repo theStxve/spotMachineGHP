@@ -847,6 +847,19 @@
         </button>
       </div>
       
+      <!-- Datenqualität: auffällige Zeitstempel -->
+      <div id="data-quality-box" class="hidden" style="background:#ff9f4314; border:1px solid #ff9f4355; border-radius:8px; padding:0.9rem; margin-bottom:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+          <strong style="font-size:0.9rem;"><i data-lucide="alert-triangle" style="width:14px;height:14px;color:#ff9f43;"></i> Auffällige Zeitstempel</strong>
+          <span id="quality-badge" style="font-size:0.75rem; color:#ff9f43;"></span>
+        </div>
+        <p id="quality-text" style="font-size:0.8rem; color:var(--muted); margin-bottom:0.75rem;"></p>
+        <div class="toggle-row" style="padding:0;">
+          <label>Jahrgänge trotzdem einbeziehen</label>
+          <input type="checkbox" id="toggle-outliers" />
+        </div>
+      </div>
+
       <div class="settings-toggles">
         <div class="toggle-row">
           <label>Genre-Tags auf Song-Karten</label>

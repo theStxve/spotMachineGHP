@@ -18,7 +18,7 @@ const KNOWN_PATHS = [
   "/api/sessions", "/api/sessions_v2", "/api/platforms", "/api/albums",
   "/api/discoveries", "/api/streaks", "/api/behavior", "/api/skip_analytics",
   "/api/search", "/api/song", "/api/album_detail", "/api/session_status",
-  "/api/heartbeat", "/api/disconnect", "/api/playlist/generate",
+  "/api/heartbeat", "/api/disconnect", "/api/playlist/generate", "/api/outliers",
 ];
 
 const KNOWN_PREFIXES = ["/api/heatmap/cell", "/api/lastfm/"];

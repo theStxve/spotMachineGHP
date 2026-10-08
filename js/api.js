@@ -6,7 +6,7 @@
  * hinter dem Flask-Server (EXE/Render) und hier im Browser.
  */
 
-import { getFrame, getMeta, hasData, clearFrame, saveCache, loadCache, loadFiles } from "./core/store.js";
+import { getFrame, getMeta, hasData, clearFrame, saveCache, loadCache, loadFiles, setIncludeOutliers, getQuality } from "./core/store.js";
 import { get_available_years, get_all_artists, recommend } from "./analytics/core.js";
 import {
   get_heatmap_data, get_skip_analysis, get_discover_tracks, get_compare_data,
@@ -57,13 +57,27 @@ export async function handleRequest(method, url, body, query) {
       (f) => f && f.name && f.name !== ""
     );
     if (!files.length) throw new RouteError("Keine Datei hochgeladen.");
-    const { meta } = await loadFiles(files, onUploadProgress);
+    const { meta, quality } = await loadFiles(files, onUploadProgress);
     await saveCache();
     return {
       success: true,
       years: meta.years,
       total_streams: meta.total,
       unique_tracks: meta.uniqueTracks,
+      quality: qualitySummary(quality),
+    };
+  }
+
+  if (path === "/api/outliers" && method === "POST") {
+    const { changed, quality } = setIncludeOutliers(body && body.include);
+    if (changed) await saveCache();
+    const m = getMeta();
+    return {
+      success: true,
+      changed,
+      total_streams: m.total,
+      years: m.years,
+      quality: qualitySummary(quality),
     };
   }
 
@@ -81,6 +95,7 @@ export async function handleRequest(method, url, body, query) {
       unique_tracks: df.meta.nSongs,
       years: getMeta().years,
       latest_stream: get_latest_stream_info(df),
+      quality: qualitySummary(getQuality()),
     };
   }
 
@@ -244,6 +259,23 @@ export async function handleRequest(method, url, body, query) {
 function onUploadProgress(pct, label) {
   const el = document.getElementById("loader-text");
   if (el) el.textContent = `Lese ${label} ... ${Math.round(pct * 100)} %`;
+}
+
+/** Was das Frontend zum Ausschluss auffaelliger Zeitstempel wissen muss.
+ *  Feldnamen in snake_case wie im Rest der API. */
+function qualitySummary(quality) {
+  if (!quality) {
+    return { has_outliers: false, dropped: 0, include_outliers: false, detail: [], years: [], earliest: null };
+  }
+  const detail = (quality.outliers || []).map((o) => ({ year: o.year, count: o.count }));
+  return {
+    has_outliers: detail.length > 0,
+    dropped: quality.dropped || 0,
+    include_outliers: !!quality.includeOutliers,
+    detail,
+    years: detail.map((o) => o.year),
+    earliest: quality.earliest ?? null,
+  };
 }
 
 export { loadCache, RouteError };
