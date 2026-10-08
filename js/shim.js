@@ -8,8 +8,8 @@
  * Alles laeuft im Browser: es gibt keinen Server, der die Daten sieht.
  */
 
-import { handleRequest, loadCache } from "./api.js";
-import { hasData } from "./core/store.js";
+import { handleRequest } from "./api.js";
+import { hasData, peekCache } from "./core/store.js";
 
 const KNOWN_PATHS = [
   "/upload", "/clear", "/recommend",
@@ -19,6 +19,7 @@ const KNOWN_PATHS = [
   "/api/discoveries", "/api/streaks", "/api/behavior", "/api/skip_analytics",
   "/api/search", "/api/song", "/api/album_detail", "/api/session_status",
   "/api/heartbeat", "/api/disconnect", "/api/playlist/generate", "/api/outliers",
+  "/api/cache/info", "/api/cache/restore", "/api/cache/clear", "/api/settings",
 ];
 
 const KNOWN_PREFIXES = ["/api/heatmap/cell", "/api/lastfm/"];
@@ -63,7 +64,10 @@ window.fetch = async function shim(input, init = {}) {
   await cacheReady;
 
   // Kein Datenbestand und etwas, das ihn braucht: so antworten wie Flask mit 400.
-  if (!hasData() && !["/upload", "/clear", "/api/session_status", "/api/heartbeat", "/api/disconnect"].includes(parsed.pathname)) {
+  if (!hasData() && ![
+    "/upload", "/clear", "/api/session_status", "/api/heartbeat", "/api/disconnect",
+    "/api/cache/info", "/api/cache/restore", "/api/cache/clear", "/api/settings",
+  ].includes(parsed.pathname)) {
     return jsonResponse({ error: "No data" }, 400);
   }
 
@@ -91,17 +95,19 @@ window.fetch = async function shim(input, init = {}) {
 };
 
 /**
- * Beim Start einen vorhandenen Cache wiederherstellen. Das erspart das
- * erneute Einlesen der Dateien nach einem Reload.
+ * Ein vorhandener Cache wird **nicht** von selbst geladen.
+ *
+ * Der Cache liegt pro Origin, nicht pro Nutzer. Ohne Nachfrage wuerde auf
+ * einem geteilten Rechner die naechste Person, die die Seite oeffnet, die
+ * Daten des Vorherigen sehen - genau das Problem, das es bei der
+ * Server-Variante gab. Stattdessen wird nur gemeldet, dass etwas da ist.
  */
-function restore() {
-  return loadCache().then((meta) => {
-    if (meta) window.dispatchEvent(new CustomEvent("wkmm:cache-restored", { detail: meta }));
-    return meta;
-  }).catch((e) => {
-    console.warn("Cache-Wiederherstellung fehlgeschlagen:", e);
-    return null;
-  });
+function offerCachedData() {
+  return peekCache().then((info) => {
+    window.__wkmmCacheInfo = info;
+    if (info) window.dispatchEvent(new CustomEvent("wkmm:cache-found", { detail: info }));
+    return info;
+  }).catch(() => null);
 }
 
-const cacheReady = restore();
+const cacheReady = offerCachedData();

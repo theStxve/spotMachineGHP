@@ -53,24 +53,60 @@ export function fmtISOStamp(ms) {
     pad2(d.getUTCMinutes()) + ":" + pad2(d.getUTCSeconds()) + "Z";
 }
 
-/** Python round(): kaufmaennisch, nicht "half away from zero" wie Math.round. */
+/**
+ * Zerlegt einen double in die exakte Form m * 2^e (m ganzzahlig).
+ * Nur so laesst sich ein double exakt gegen eine Dezimalmitte vergleichen.
+ */
+function doubleParts(x) {
+  const buf = new DataView(new ArrayBuffer(8));
+  buf.setFloat64(0, x);
+  const hi = buf.getUint32(0);
+  const lo = buf.getUint32(4);
+  const expBits = (hi >>> 20) & 0x7ff;
+  let mantissa = (BigInt(hi & 0xfffff) << 32n) | BigInt(lo);
+  if (expBits === 0) return { m: mantissa, e: -1074 };          // Subnormal
+  return { m: mantissa | (1n << 52n), e: expBits - 1075 };
+}
+
+/**
+ * Python round(): kaufmaennisch (half to even), entschieden anhand des
+ * EXAKTEN Binärwerts.
+ *
+ * Warum das so aufwendig ist: das double 4.35 ist in Wahrheit
+ * 4.34999999999999964. Ein doppeltes * 10 ergibt exakt 43.5 und verliert
+ * damit die Information "eigentlich unter der Mitte". Wer auf 43.5 rundet,
+ * landet bei 4.4 - Python dagegen bei 4.3. Der Vergleich laeuft deshalb in
+ * BigInt gegen die exakte Mitte.
+ */
 export function roundHalfEven(value, digits = 0) {
+  if (!Number.isFinite(value)) return value;
   const factor = Math.pow(10, digits);
-  const scaled = value * factor;
-  const r = Math.round(scaled);
-  // Math.round(x) = floor(x + 0.5) und bricht bei .5 immer auf. Python
-  // round() geht bei .5 auf die gerade Zahl. Wir korrigieren nur den
-  // Randfall, in dem ourzeilig .5 auftritt.
-  let out;
-  if (Number.isFinite(scaled) && Math.abs(scaled % 1) !== 0.5) {
-    out = r;
+  const sign = value < 0 ? -1 : 1;
+  const abs = Math.abs(value);
+
+  const { m, e } = doubleParts(abs);
+  // abs gegen (floor + 0.5) vergleichen:
+  //   abs * factor * 2  ?  2 * floor + 1
+  // Bei negativem Exponenten muss der Faktor auf die andere Seite wandern -
+  // BigInt erlaubt keine negativen Shift-Zaehler.
+  const floor = Math.floor(abs * factor);
+  const right = 2n * BigInt(floor) + 1n;
+  const scaled = m * BigInt(factor);
+  const k = e + 1;
+  let lhs, rhs;
+  if (k >= 0) {
+    lhs = scaled << BigInt(k);
+    rhs = right;
   } else {
-    out = Math.floor(scaled);
-    const diff = scaled - Math.floor(scaled);
-    if (diff > 0.5) out = Math.floor(scaled) + 1;
-    else if (diff === 0.5) out = Math.floor(scaled) % 2 === 0 ? Math.floor(scaled) : Math.floor(scaled) + 1;
+    lhs = scaled;
+    rhs = right << BigInt(-k);
   }
-  return out / factor;
+
+  let rounded;
+  if (lhs > rhs) rounded = floor + 1;
+  else if (lhs < rhs) rounded = floor;
+  else rounded = floor % 2 === 0 ? floor : floor + 1;   // exakt auf der Mitte
+  return (sign * rounded) / factor;
 }
 
 /** Python round(x, 1) - eine Nachkommastelle. */

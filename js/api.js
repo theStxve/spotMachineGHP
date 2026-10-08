@@ -6,7 +6,10 @@
  * hinter dem Flask-Server (EXE/Render) und hier im Browser.
  */
 
-import { getFrame, getMeta, hasData, clearFrame, saveCache, loadCache, loadFiles, setIncludeOutliers, getQuality } from "./core/store.js";
+import {
+  getFrame, getMeta, hasData, clearFrame, saveCache, loadCache, peekCache, clearCache,
+  loadFiles, setIncludeOutliers, getQuality, getSettings, setSettings, applyTimeMode,
+} from "./core/store.js";
 import { get_available_years, get_all_artists, recommend } from "./analytics/core.js";
 import {
   get_heatmap_data, get_skip_analysis, get_discover_tracks, get_compare_data,
@@ -51,26 +54,66 @@ export async function handleRequest(method, url, body, query) {
   const q = (name, fallback = null) => (query && query.has(name) ? query.get(name) : fallback);
   const path = url.split("?")[0];
 
-  // ── Upload / Import ───────────────────────────────────────────────────────
+  // â”€â”€ Upload / Import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (path === "/upload" && method === "POST") {
     const files = (body && body.getAll ? body.getAll("files") : []).filter(
       (f) => f && f.name && f.name !== ""
     );
     if (!files.length) throw new RouteError("Keine Datei hochgeladen.");
     const { meta, quality } = await loadFiles(files, onUploadProgress);
-    await saveCache();
+    const saved = await saveCache({ profile: (getSettings().profile || "").trim() });
     return {
       success: true,
       years: meta.years,
       total_streams: meta.total,
       unique_tracks: meta.uniqueTracks,
       quality: qualitySummary(quality),
+      cache_saved: saved.ok,
+      cache_error: saved.ok ? null : saved.reason,
+    };
+  }
+
+  // ── Cache: erst nachfragen, dann laden ────────────────────────────────────
+  if (path === "/api/cache/info" && method === "GET") {
+    const info = await peekCache();
+    return { available: !!info, ...(info || {}) };
+  }
+
+  if (path === "/api/cache/restore" && method === "POST") {
+    const loaded = await loadCache();
+    if (!loaded) return { success: false, reason: "nicht lesbar" };
+    return { success: true, total_streams: getMeta().total, years: getMeta().years };
+  }
+
+  if (path === "/api/cache/clear" && method === "POST") {
+    // Loescht nur die Zwischenspeicherung, nicht den geladenen Datensatz -
+    // der Nutzer will die Kopie auf dem Geraet weg haben, nicht die Auswertung.
+    return { success: await clearCache() };
+  }
+
+  // ── Einstellungen ─────────────────────────────────────────────────────────
+  if (path === "/api/settings" && method === "GET") return getSettings();
+
+  if (path === "/api/settings" && method === "POST") {
+    const previous = getSettings();
+    const next = setSettings(body || {});
+    let cache = null;
+    if (body && body.tz_mode !== undefined && previous.tz_mode !== next.tz_mode) {
+      applyTimeMode(next.tz_mode);
+      cache = await saveCache({ profile: next.profile });
+    }
+    return {
+      success: true,
+      settings: next,
+      total_streams: hasData() ? getMeta().total : 0,
+      cache_saved: cache ? cache.ok : null,
+      cache_error: cache && !cache.ok ? cache.reason : null,
     };
   }
 
   if (path === "/api/outliers" && method === "POST") {
     const { changed, quality } = setIncludeOutliers(body && body.include);
-    if (changed) await saveCache();
+    if (changed) await saveCache({ profile: getSettings().profile });
     const m = getMeta();
     return {
       success: true,
@@ -103,7 +146,7 @@ export async function handleRequest(method, url, body, query) {
   // Endpunkte existieren nur, damit das Frontend keinen Fehler sieht.
   if (path === "/api/heartbeat" || path === "/api/disconnect") return { ok: true };
 
-  // ── Empfehlungen & Grunddaten ─────────────────────────────────────────────
+  // â”€â”€ Empfehlungen & Grunddaten â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (path === "/recommend" && method === "POST") {
     const df = needFrame();
     const year = int(body.year, 2023);
@@ -162,7 +205,7 @@ export async function handleRequest(method, url, body, query) {
     return get_album_detail(needFrame(), body.album || "", body.artist || "");
   }
 
-  // ── Last.fm ───────────────────────────────────────────────────────────────
+  // â”€â”€ Last.fm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (path === "/api/lastfm/test" && method === "POST") {
     return { valid: await lastfm.testApiKey(keyOf(body)) };
   }
@@ -212,7 +255,7 @@ export async function handleRequest(method, url, body, query) {
     const merged = appendAndDeduplicateStreams(df, newTracks);
     const { setFrame } = await import("./core/store.js");
     setFrame(merged.df);
-    await saveCache();
+    await saveCache({ profile: getSettings().profile });
     const years = get_available_years(merged.df);
     const sample = [];
     const tailCount = Math.min(5, newTracks.length);
@@ -236,7 +279,7 @@ export async function handleRequest(method, url, body, query) {
     };
   }
 
-  // ── Playlist ──────────────────────────────────────────────────────────────
+  // â”€â”€ Playlist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (path === "/api/playlist/generate" && method === "POST") {
     const df = getFrame();
     return generate_playlist(df, {

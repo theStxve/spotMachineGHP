@@ -179,6 +179,110 @@ uploadBtn.addEventListener("click", async () => {
     }
 });
 
+// ── MODULE: Zwischenspeicherung ──
+// Der Cache wird nie von selbst geladen: er liegt pro Browser, nicht pro
+// Nutzer. Auf einem geteilten Rechner wuerde sonst die naechste Person die
+// Daten des Vorherigen sehen. Deshalb wird gefragt.
+window.addEventListener("wkmm:cache-found", (e) => {
+    const info = e.detail;
+    const box = document.getElementById("cache-offer");
+    if(!box || !info) return;
+    const when = info.savedAt ? new Date(info.savedAt).toLocaleString("de-DE") : "unbekannt";
+    const files = (info.fileNames || []).slice(0, 3).join(", ");
+    document.getElementById("cache-offer-text").innerHTML =
+        `In diesem Browser liegen ${info.n.toLocaleString()} Streams vom ${when}` +
+        `${files ? ` (${files}${info.fileNames.length > 3 ? ", …" : ""})` : ""}. ` +
+        `<strong>Gehören die dir?</strong> Wenn nicht, bitte verwerfen.`;
+    box.classList.remove("hidden");
+    lucide.createIcons();
+});
+
+document.getElementById("cache-use-btn")?.addEventListener("click", async () => {
+    showLoader("Lade gespeicherte Daten...");
+    try {
+        const res = await apiCall("/api/cache/restore", "POST", {});
+        hideLoader();
+        if(!res.success) return alert("Gespeicherte Daten konnten nicht geladen werden.");
+        document.getElementById("cache-offer").classList.add("hidden");
+        showToast(`${res.total_streams.toLocaleString()} Streams geladen`);
+        await checkExistingSession();
+    } catch(e) {
+        hideLoader();
+        alert("Laden fehlgeschlagen: " + e.message);
+    }
+});
+
+document.getElementById("cache-drop-btn")?.addEventListener("click", async () => {
+    await apiCall("/api/cache/clear", "POST", {});
+    document.getElementById("cache-offer").classList.add("hidden");
+    showToast("Zwischenspeicherung gelöscht");
+});
+
+document.getElementById("cache-wipe-btn")?.addEventListener("click", async () => {
+    const res = await apiCall("/api/cache/clear", "POST", {});
+    showToast(res.success ? "Zwischenspeicherung gelöscht" : "Löschen fehlgeschlagen");
+});
+
+// ── MODULE: Einstellungen (Zeitzone, Profilname) ──
+async function loadSettings() {
+    const s = await apiCall("/api/settings");
+    state.settingsTz = s.tz_mode;
+    const tz = document.getElementById("toggle-tz-local");
+    if(tz) tz.checked = s.tz_mode === "local";
+    const prof = document.getElementById("profile-name");
+    if(prof) prof.value = s.profile || "";
+    updateTzHint();
+}
+
+function updateTzHint() {
+    const hint = document.getElementById("tz-hint");
+    if(!hint) return;
+    const local = state.settingsTz === "local";
+    const zone = (window.Intl && Intl.DateTimeFormat)
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone : null;
+    hint.textContent = local ? (zone || "lokal") : "UTC";
+}
+
+async function saveSettings(patch) {
+    // Die IANA-Zone des Browsers mitschicken. Python kann die Systemzeitzone
+    // unter Windows nicht zuverlaesig ermitteln, der Browser aber schon.
+    const zone = (window.Intl && Intl.DateTimeFormat)
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
+    const res = await apiCall("/api/settings", "POST", { ...patch, tz: zone });
+    if(res.settings) {
+        state.settingsTz = res.settings.tz_mode;
+        updateTzHint();
+    }
+    if(res.cache_saved === false) {
+        showToast("Hinweis: Zwischenspeicherung nicht möglich (Speicherplatz)");
+    }
+    return res;
+}
+
+document.getElementById("toggle-tz-local")?.addEventListener("change", async (e) => {
+    showLoader("Wende Zeitzone an...");
+    try {
+        await saveSettings({ tz_mode: e.target.checked ? "local" : "utc" });
+        hideLoader();
+        // Tabs neu laden, damit Heatmap und Tagesverläufe stimmen
+        state.tabCache = {};
+        document.querySelector(`.tab-btn[data-tab="${state.activeTab}"]`)?.click();
+        showToast(e.target.checked
+            ? "Auswertung läuft jetzt in lokaler Zeit"
+            : "Auswertung läuft wieder in UTC");
+    } catch(err) {
+        hideLoader();
+        alert("Umschalten fehlgeschlagen: " + err.message);
+    }
+});
+
+document.getElementById("profile-name")?.addEventListener("change", async (e) => {
+    await saveSettings({ profile: e.target.value });
+    showToast("Name gespeichert");
+});
+
+document.getElementById("settings-open")?.addEventListener("click", loadSettings);
+
 // ── MODULE: Datenqualität (auffällige Zeitstempel) ──
 function applyQuality(q) {
     state.quality = q || null;

@@ -18,6 +18,51 @@ let frame = null;
 let frameAll = null;      // ungeprueft, wie es aus der Datei kam
 let quality = null;       // { outliers, dropped, includeOutliers }
 let meta = { years: [], total: 0, savedAt: null, fileNames: [] };
+let settings = { tz_mode: "utc", profile: "", tz: "" };
+
+/** Umleitung der Kalender-Spalten, je nach Zeitzonen-Einstellung. */
+export function aliasesForTime(mode) {
+  if (mode === "local") {
+    return {
+      year: "year_local", hour: "hour_local", weekday: "weekday_local",
+      month: "month_local", ym: "ym_local", day: "day_local",
+    };
+  }
+  return null;
+}
+
+/**
+ * Setzt den aktiven Kalender-Modus fuer den geladenen Datensatz. Die Spalten
+ * liegen beide Varianten vor, deshalb geht das ohne erneuten Import.
+ */
+export function applyTimeMode(mode) {
+  const aliases = aliasesForTime(mode);
+  if (!frameAll) return;
+  // frameAll bleibt IMMER der ungefilterte Datensatz - nur die Spalten-
+  // umleitung aendert sich. Andernfalls waeren die ausgeschlossenen Streams
+  // endgueltig weg und nicht zurueckschaltbar.
+  frameAll = frameAll.withAliases(aliases);
+  frame = quality && quality.outliers.length && !quality.includeOutliers
+    ? dropOutlierYears(frameAll, quality.outliers).frame.withAliases(aliases)
+    : frameAll;
+  setFrame(frame, { savedAt: meta.savedAt, fileNames: meta.fileNames });
+}
+
+export function getSettings() {
+  return { ...settings };
+}
+
+/** @returns {object} die tatsaechlich gesetzten Einstellungen */
+export function setSettings(patch) {
+  if (patch && patch.tz_mode === "local") settings.tz_mode = "local";
+  else if (patch && patch.tz_mode === "utc") settings.tz_mode = "utc";
+  if (patch && typeof patch.profile === "string") settings.profile = patch.profile.slice(0, 60);
+  // Der Browser kennt seine IANA-Zone ("Europe/Berlin"). Das wird
+  // mitgeschickt, weil Python unter Windows die Systemzeitzone nicht
+  // zuverlaessig ermitteln kann.
+  if (patch && typeof patch.tz === "string" && patch.tz) settings.tz = patch.tz.slice(0, 60);
+  return { ...settings };
+}
 
 export function getFrame() {
   return frame;
@@ -75,7 +120,8 @@ export function setIncludeOutliers(include) {
   const want = !!include;
   if (want === !!quality.includeOutliers) return { changed: false, quality };
   quality = { ...quality, includeOutliers: want };
-  frame = want ? frameAll : dropOutlierYears(frameAll, quality.outliers).frame;
+  frame = (want ? frameAll : dropOutlierYears(frameAll, quality.outliers).frame)
+    .withAliases(aliasesForTime(settings.tz_mode));
   setFrame(frame, { savedAt: meta.savedAt, fileNames: meta.fileNames });
   return { changed: true, quality };
 }
@@ -119,8 +165,14 @@ async function withStore(mode, fn) {
  * Clone direkt uebernommen - kein JSON-Umweg, keine Groessenverluste.
  * @returns {Promise<boolean>} true wenn gespeichert
  */
-export async function saveCache() {
-  if (!frame) return false;
+/**
+ * Schreibt den Datensatz in den Cache. Typed Arrays werden per Structured
+ * Clone direkt uebernommen - kein JSON-Umweg, keine Groessenverluste.
+ * @param {object} opts  { profile: string }
+ * @returns {Promise<{ok:boolean, reason?:string}>}
+ */
+export async function saveCache(opts = {}) {
+  if (!frame) return { ok: false, reason: "kein Datensatz" };
   try {
     const cols = {};
     const types = {};
@@ -131,13 +183,39 @@ export async function saveCache() {
     const payload = {
       cols, types, n: frame.n, dict: frame.meta,
       at: Date.now(), fileNames: meta.fileNames, quality,
+      profile: opts.profile || "",
     };
     await withStore("readwrite", (store) => store.put(payload, "current"));
-    return true;
+    return { ok: true };
   } catch (e) {
-    // Quota ueberschritten o.ae. - die App laeuft ohne Cache weiter.
+    // Quota ueberschritten o.ae. - die App laeuft ohne Cache weiter, aber der
+    // Nutzer soll davon wissen, sonst wundert er sich nach dem Reload.
     console.warn("Cache nicht speicherbar:", e && e.message);
-    return false;
+    return { ok: false, reason: (e && e.name) || "Fehler" };
+  }
+}
+
+/**
+ * Liest nur die Metadaten des Caches - **laedt die Daten nicht**.
+ *
+ * Grund: der Cache liegt pro Origin, nicht pro Nutzer. Auf einem geteilten
+ * Rechner wuerde die naechste Person, die die Seite oeffnet, sonst die Daten
+ * des Vorherigen sehen, ohne eine Datei auswaehlen zu muessen. Deshalb
+ * fragt die App erst nach, statt still zu laden.
+ * @returns {Promise<{n:number, savedAt:number, fileNames:string[], profile:string}|null>}
+ */
+export async function peekCache() {
+  try {
+    const payload = await withStore("readonly", (store) => store.get("current"));
+    if (!payload || !payload.n) return null;
+    return {
+      n: payload.n,
+      savedAt: payload.at || 0,
+      fileNames: payload.fileNames || [],
+      profile: payload.profile || "",
+    };
+  } catch (e) {
+    return null;
   }
 }
 
@@ -178,6 +256,9 @@ export async function loadCache() {
 }
 
 export async function clearCache() {
+  // Ohne IndexedDB (privater Modus, abgeschalteter Speicher) gibt es auch
+  // keine Kopie - das ist fuer den Nutzer ein Erfolg, kein Fehler.
+  if (!("indexedDB" in self)) return true;
   try {
     await withStore("readwrite", (store) => store.delete("current"));
     return true;
@@ -249,10 +330,11 @@ export async function loadFiles(files, onProgress = () => {}) {
     threshold: report.threshold,
     earliest: earliestYear(built),
   };
-  frame = quality.dropped ? cleaned.frame : built;
-  setFrame(frame, { savedAt: Date.now(), fileNames: names });
+  // Aktiven Kalender-Modus anwenden (UTC ist Vorgabe)
+  applyTimeMode(settings.tz_mode);
   return { meta, quality, fromZip };
 }
+
 
 /** Fallback fuer ZIPs, deren Dateinamen nicht dem Spotify-Muster entsprechen. */
 async function extractAnyZipJson(file) {

@@ -12,7 +12,13 @@
  *   .to_dict("records")        ->  records (fertiges Array)
  */
 
-import { round1 } from "./format.js";
+import { round1, roundHalfEven } from "./format.js";
+
+/** Rundet wie Python round(value, digits). */
+export function roundTo(value, digits = 0) {
+  return roundHalfEven(value, digits);
+}
+
 
 /**
  * groupby(...).agg(...) in einer Stufe.
@@ -176,15 +182,7 @@ export function round1Field(records, field) {
 
 /** Wie oben, nur direkt auf einem Werte-Array (fuer JSON-Ausgaben). */
 export function roundAll(values, digits = 1) {
-  return Array.from(values, (v) => {
-    const f = Math.pow(10, digits);
-    const x = v * f;
-    const fl = Math.floor(x);
-    const diff = x - fl;
-    let out;
-    if (diff > 0.5) out = fl + 1;
-    else if (diff < 0.5) out = fl;
-    else out = fl % 2 === 0 ? fl : fl + 1;
-    return out / f;
-  });
+  const out = new Array(values.length);
+  for (let i = 0; i < values.length; i++) out[i] = roundTo(values[i], digits);
+  return out;
 }

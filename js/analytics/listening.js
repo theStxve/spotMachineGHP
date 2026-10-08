@@ -396,12 +396,21 @@ export function get_session_stats(df, year) {
 // ── 522-553 ────────────────────────────────────────────────────────────────
 
 function normPlatform(p) {
+  // Reihenfolge ist wichtig: spezifische Muster vor den Oberbegriffen,
+  // sonst schluckt "android" die Tablets.
   const s = String(p).toLowerCase();
+  // PlayStation liefert Geraete-IDs statt Namen, z.B.
+  // "Partner SCEI sony_tv;ps4;9b18101888dd42948afd0b8792122bec;;tpapi"
+  if (/playstation|ps3|ps4|ps5/.test(s)) return "PlayStation";
+  if (s.indexOf("android") >= 0) return s.indexOf("tablet") >= 0 ? "Android Tablet" : "Android";
   if (s.indexOf("ios") >= 0) return "iOS";
-  if (s.indexOf("android") >= 0) return "Android";
   if (s.indexOf("web") >= 0) return "Web Player";
-  if (s.indexOf("mac") >= 0) return "Mac";
+  if (s.indexOf("mac") >= 0 || s.indexOf("osx") >= 0) return "Mac";
   if (s.indexOf("windows") >= 0) return "Windows";
+  if (s.indexOf("linux") >= 0) return "Linux";
+  if (/smart speaker|sonos|amazon|alexa/.test(s)) return "Sonos / Lautsprecher";
+  if (s.indexOf("chromecast") >= 0 || s.indexOf("tv") >= 0) return "TV / Cast";
+  if (!s || s === "nan") return "Unbekannt";
   return "Other";
 }
 

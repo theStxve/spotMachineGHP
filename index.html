@@ -35,6 +35,22 @@
   <main>
     <!-- Upload Section -->
     <section id="upload-section" class="card">
+      <div id="cache-offer" class="hidden" style="background:#5b8def14; border:1px solid #5b8def55; border-radius:10px; padding:1rem; margin-bottom:1.25rem;">
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+          <i data-lucide="database" style="width:16px;height:16px;color:var(--similar);"></i>
+          <strong style="font-size:0.9rem;">Gespeicherte Daten gefunden</strong>
+        </div>
+        <p id="cache-offer-text" style="font-size:0.82rem; color:var(--muted); margin-bottom:0.75rem;"></p>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button id="cache-use-btn" class="btn btn-primary" style="font-size:0.82rem; padding:0.45rem 0.8rem;">
+            <i data-lucide="check"></i> Diese Daten verwenden
+          </button>
+          <button id="cache-drop-btn" class="btn btn-ghost" style="font-size:0.82rem; padding:0.45rem 0.8rem;">
+            <i data-lucide="trash-2"></i> Verwerfen und löschen
+          </button>
+        </div>
+      </div>
+
       <div class="step-label">Schritt 1</div>
       <h2>Deine Spotify-Daten hochladen</h2>
       <div id="drop-zone" class="drop-zone">
@@ -877,6 +893,29 @@
           <label>Globale Track-Stats (Listeners, Playcount)</label>
           <input type="checkbox" id="toggle-track-stats" />
         </div>
+      </div>
+
+      <!-- Zeitzone: Heatmap und Tagesverläufe -->
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:0.9rem; margin-top:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+          <strong style="font-size:0.9rem;"><i data-lucide="clock" style="width:14px;height:14px;color:var(--green);"></i> Zeitzone der Auswertung</strong>
+          <span id="tz-hint" style="font-size:0.72rem; color:var(--muted);"></span>
+        </div>
+        <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.6rem;">
+          Spotify speichert alle Zeiten in UTC. In der Heatmap und bei den
+          Tagesverläufen liegen deine Abendstunden dadurch zwei Stunden zu früh.
+        </p>
+        <div class="toggle-row" style="padding:0;">
+          <label>Lokale Zeit statt UTC verwenden</label>
+          <input type="checkbox" id="toggle-tz-local" />
+        </div>
+        <div class="form-group" style="margin-top:0.75rem;">
+          <label style="font-size:0.78rem;">Name für die Zwischenspeicherung (optional)</label>
+          <input type="text" id="profile-name" placeholder="z.B. mein Name" maxlength="60" />
+        </div>
+        <button id="cache-wipe-btn" class="btn btn-ghost" style="width:100%; font-size:0.82rem; margin-top:0.75rem;">
+          <i data-lucide="trash-2"></i> Zwischenspeicherung auf diesem Gerät löschen
+        </button>
       </div>
       
       <button id="settings-save" class="btn btn-primary" style="margin-top:1.5rem; width:100%;">Speichern & Schließen</button>

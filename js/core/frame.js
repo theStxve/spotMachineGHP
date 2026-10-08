@@ -178,10 +178,12 @@ export class Frame {
   /**
    * @param {Object<string, Column>} cols
    * @param {Uint32Array|null} idx  Zeilenindizes; null = alle Zeilen
+   * @param {Object|null} aliases  Umleitung Spaltenname -> realer Name
    */
-  constructor(cols, idx) {
+  constructor(cols, idx, aliases) {
     this.cols = cols;
     this.idx = idx || null;
+    this.aliases = aliases || null;
     this.n = idx ? idx.length : (cols[Object.keys(cols)[0]].data.length);
   }
 
@@ -193,12 +195,31 @@ export class Frame {
     return new Frame(cols, null);
   }
 
+  /**
+   * Leitet Spaltennamen auf andere um. Dadurch bleibt die Analytics identisch
+   * und trotzdem in lokalen Zeit rechenbar:
+   *   frame.withAliases({ hour: "hour_local" }).eq("year", 2024)
+   * Laesst alle Spalten vorhanden, es wird nur der Name aufgeloest.
+   */
+  withAliases(aliases) {
+    const view = new Frame(this.cols, this.idx, aliases);
+    // meta beschreibt den Datensatz, nicht die Ansicht - muss durchgereicht
+    // werden, sonst fehlen spaeter nSongs/nArtists.
+    if (this.meta) view.meta = this.meta;
+    return view;
+  }
+
   has(name) {
-    return Object.prototype.hasOwnProperty.call(this.cols, name);
+    return Object.prototype.hasOwnProperty.call(this.cols, this._resolve(name));
+  }
+
+  _resolve(name) {
+    if (this.aliases && this.aliases[name]) return this.aliases[name];
+    return name;
   }
 
   col(name) {
-    const c = this.cols[name];
+    const c = this.cols[this._resolve(name)];
     if (!c) throw new Error("Unbekannte Spalte: " + name);
     return c;
   }
@@ -213,10 +234,10 @@ export class Frame {
 
   /** Neue Ansicht mit gefilterten Zeilen - es wird nichts kopiert. */
   take(indices) {
-    return new Frame(this.cols, Uint32Array.from(indices));
+    return new Frame(this.cols, Uint32Array.from(indices), this.aliases);
   }
 
-  // ── Filter ────────────────────────────────────────────────────────────────
+  // â”€â”€ Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   eq(name, value) {
     const d = this.col(name).data;
     const r = this.rows();
@@ -295,7 +316,7 @@ export class Frame {
     return new Frame(merged, null);
   }
 
-  // ── Sortieren ─────────────────────────────────────────────────────────────
+  // â”€â”€ Sortieren â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
    * @param {Array<[string, boolean]>} specs  [Spalte, aufsteigend?]
    * @returns {Uint32Array} Zeilenindizes, stabil sortiert (wie pandas head())
@@ -347,7 +368,7 @@ export class Frame {
     return view;
   }
 
-  // ── Gruppen ───────────────────────────────────────────────────────────────
+  // â”€â”€ Gruppen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
    * @param {string|Array<string>} names
    * @param {Object} opts  {sorted: true|false, codeCol: "song_id_code"}
@@ -390,7 +411,7 @@ export class Frame {
     return new GroupTable(this, codes, rows, nGroups, null, null);
   }
 
-  // ── Ausgabe ───────────────────────────────────────────────────────────────
+  // â”€â”€ Ausgabe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** Python to_dict("records") - nur fuer kleine Ergebnis-Mengen. */
   records(cols = null) {
     const names = cols || Object.keys(this.cols);

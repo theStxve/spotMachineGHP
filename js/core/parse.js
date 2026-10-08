@@ -28,6 +28,10 @@ export function ingestRecords(builder, records) {
     const safeMs = Number.isFinite(msPlayed) ? msPlayed : 0;
 
     const d = new Date(ts);
+    // UTC-Felder (wie pandas mit utc=True) und lokale Felder parallel. Die
+    // lokale Variante braucht der Nutzer fuer die Tagesverlaeufe: ein Stream
+    // um 23:30 Berlin ist 21:30 UTC und gehoert lokal zum neuen Tag.
+    const local = new Date(ts + tzOffsetMinutes(ts) * 60000);
     builder.ts.push(ts);
     builder.ms_played.push(safeMs);
     builder.minutes_played.push(safeMs / 60000);
@@ -46,7 +50,23 @@ export function ingestRecords(builder, records) {
     builder.weekday.push(weekdayUTC(ts));
     builder.month.push(d.getUTCMonth() + 1);
     builder.ym.push(d.getUTCFullYear() * 100 + d.getUTCMonth() + 1);
+    builder.yearLocal.push(local.getUTCFullYear());
+    builder.hourLocal.push(local.getUTCHours());
+    builder.weekdayLocal.push(weekdayUTC(ts + tzOffsetMinutes(ts) * 60000));
+    builder.monthLocal.push(local.getUTCMonth() + 1);
+    builder.ymLocal.push(local.getUTCFullYear() * 100 + local.getUTCMonth() + 1);
+    builder.dayLocal.push(Math.floor((ts + tzOffsetMinutes(ts) * 60000) / 86400000));
+    builder.day.push(Math.floor(ts / 86400000));
   }
+}
+
+/**
+ * Zeitzonenverschiebung in Minuten fuer einen Zeitpunkt (Ost +, West -).
+ * Wird pro Zeitstempel einzeln bestimmt, weil die Regel ueber die
+ * Sommerzeit hinweg springt.
+ */
+export function tzOffsetMinutes(ms) {
+  return -new Date(ms).getTimezoneOffset();
 }
 
 export function createBuilder() {
@@ -55,7 +75,8 @@ export function createBuilder() {
     track: [], artist: [], album: [], uri: [],
     skipped: [], shuffle: [], offline: [],
     platform: [], reason_end: [], reason_start: [],
-    year: [], hour: [], weekday: [], month: [], ym: [],
+    year: [], hour: [], weekday: [], month: [], ym: [], day: [],
+    yearLocal: [], hourLocal: [], weekdayLocal: [], monthLocal: [], ymLocal: [], dayLocal: [],
   };
 }
 
@@ -127,6 +148,15 @@ export function finalizeFrame(builder) {
     weekday: [Uint8Array.from(builder.weekday), "i"],
     month: [Uint8Array.from(builder.month), "i"],
     ym: [Int32Array.from(builder.ym), "i"],
+    day: [Int32Array.from(builder.day), "i"],
+    // Lokale Zeitvariante. Nicht in den Auswertungen enthalten, solange der
+    // Nutzer auf UTC steht - siehe Frame.withAliases().
+    year_local: [Int16Array.from(builder.yearLocal), "i"],
+    hour_local: [Uint8Array.from(builder.hourLocal), "i"],
+    weekday_local: [Uint8Array.from(builder.weekdayLocal), "i"],
+    month_local: [Uint8Array.from(builder.monthLocal), "i"],
+    ym_local: [Int32Array.from(builder.ymLocal), "i"],
+    day_local: [Int32Array.from(builder.dayLocal), "i"],
     song_id: [song_id, "s"],
     song_id_code: [song_code, "i"],
     artist_code: [artist_code, "i"],
