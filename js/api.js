@@ -10,6 +10,7 @@ import {
   getFrame, getMeta, hasData, clearFrame, saveCache, loadCache, peekCache, clearCache,
   loadFiles, setIncludeOutliers, getQuality, getSettings, setSettings, applyTimeMode,
   setOnlyMusic, getMedia, setArtistBlacklist, getBlacklist, setYears, getYearScope,
+  appendStreams,
 } from "./core/store.js";
 import { get_available_years, get_all_artists, recommend } from "./analytics/core.js";
 import { get_top_songs } from "./analytics/topsongs.js";
@@ -279,9 +280,10 @@ export async function handleRequest(method, url, body, query) {
         latest_stream: latest,
       };
     }
-    const merged = appendAndDeduplicateStreams(df, newTracks);
-    const { setFrame } = await import("./core/store.js");
-    setFrame(merged.df);
+    // An den UNGEFILTERTEN Rohbestand anhaengen (store.appendStreams), nicht an
+    // die aktive Ansicht - sonst gingen gerade herausgefilterte Zeilen
+    // (Blacklist/Jahre/Medien/Ausreisser) beim Mergen verloren.
+    const merged = appendStreams(newTracks);
     await saveCache({ profile: getSettings().profile });
     const years = get_available_years(merged.df);
     const sample = [];

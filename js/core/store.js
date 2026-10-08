@@ -9,6 +9,7 @@
 import { ingestRecords, createBuilder, finalizeFrame, extractZip, isHistoryName } from "./parse.js";
 import { Frame } from "./frame.js";
 import { findOutlierYears, dropOutlierYears, earliestYear } from "./quality.js";
+import { appendAndDeduplicateStreams } from "../analytics/behavior.js";
 
 const DB_NAME = "wkmm-store";
 const DB_VERSION = 1;
@@ -56,6 +57,22 @@ function countMedia(f) {
 
 export function getMedia() {
   return { ...media };
+}
+
+/**
+ * Haengt Records an den UNGEFILTERTEN Rohbestand an (Last.fm-Sync) und baut
+ * die aktive Ansicht mit allen Filtern neu auf. Die Basis ist bewusst
+ * frameAll, nicht die aktive Ansicht - sonst wuerden gerade herausgefilterte
+ * Zeilen (Blacklist, Jahre, Medien, Ausreisser) beim Mergen verloren gehen.
+ * @returns {{addedCount:number, total:number}}
+ */
+export function appendStreams(records) {
+  if (!frameAll) return { df: null, addedCount: 0 };
+  const merged = appendAndDeduplicateStreams(frameAll, records);
+  frameAll = merged.df;
+  media = countMedia(frameAll);
+  rebuildActiveFrame();
+  return merged;
 }
 
 /** Gesperrte Artists als Kleinschreibungs-Set, Leerraum entfernt. */
@@ -122,8 +139,13 @@ export function getBlacklist() {
   return out;
 }
 
-/** Setzt die Blacklist (bereits bereinigt) und baut die Ansicht neu auf. */
-export function setArtistBlacklist(names) {
+/**
+ * Bereinigt Artist-Namen fuer die Blacklist: getrimmt, hoechstens 80 Zeichen,
+ * case-insensitiv dedupliziert, hoechstens 200 Eintraege. Gemeinsame Logik
+ * fuer setArtistBlacklist() und loadCache() - damit ein Reload exakt die
+ * gleiche Normalisierung bekommt wie eine direkte Eingabe.
+ */
+function _cleanBlacklist(names) {
   const seen = new Set();
   const clean = [];
   for (const n of Array.isArray(names) ? names : []) {
@@ -133,7 +155,12 @@ export function setArtistBlacklist(names) {
     seen.add(key);
     clean.push(text);
   }
-  settings.artist_blacklist = clean.slice(0, 200);
+  return clean.slice(0, 200);
+}
+
+/** Setzt die Blacklist (bereits bereinigt) und baut die Ansicht neu auf. */
+export function setArtistBlacklist(names) {
+  settings.artist_blacklist = _cleanBlacklist(names);
   rebuildActiveFrame();
   return { ...settings };
 }
@@ -181,8 +208,11 @@ export function getYearScope() {
   return { available, counts, selected, all: !keys.size, streams };
 }
 
-/** Setzt die globalen Jahre (leere Liste = alle). */
-export function setYears(years) {
+/**
+ * Bereinigt die Jahresauswahl: ganzzahlig, dedupliziert, aufsteigend sortiert,
+ * hoechstens 40 Eintraege. Gemeinsame Logik fuer setYears() und loadCache().
+ */
+function _cleanYears(years) {
   const picked = [];
   const seen = new Set();
   for (const y of Array.isArray(years) ? years : []) {
@@ -192,7 +222,12 @@ export function setYears(years) {
       picked.push(n);
     }
   }
-  settings.years = picked.slice(0, 40).sort((a, b) => a - b);
+  return picked.slice(0, 40).sort((a, b) => a - b);
+}
+
+/** Setzt die globalen Jahre (leere Liste = alle). */
+export function setYears(years) {
+  settings.years = _cleanYears(years);
   rebuildActiveFrame();
   return { ...settings };
 }
@@ -355,6 +390,19 @@ async function withStore(mode, fn) {
  * @returns {Promise<boolean>} true wenn gespeichert
  */
 /**
+ * Der ungefilterte Rohbestand mit garantiert zusammenhaengenden Spalten.
+ * frameAll teilt seine Spalten-Arrays mit dem Ursprungsframe und hat im
+ * Normalfall idx=null - dann ist es direkt serialisierbar. Sollte idx doch
+ * gesetzt sein (Ansicht statt Materialisierung), wird einmalig materialisiert,
+ * damit saveCache keine Ansicht mit Luecken sichert.
+ */
+function _rawFrame() {
+  if (!frameAll) return null;
+  if (frameAll.idx) return frameAll.sliceRows(frameAll.rows());
+  return frameAll;
+}
+
+/**
  * Schreibt den Datensatz in den Cache. Typed Arrays werden per Structured
  * Clone direkt uebernommen - kein JSON-Umweg, keine Groessenverluste.
  * @param {object} opts  { profile: string }
@@ -363,14 +411,22 @@ async function withStore(mode, fn) {
 export async function saveCache(opts = {}) {
   if (!frame) return { ok: false, reason: "kein Datensatz" };
   try {
+    // WICHTIG: immer frameAll (der ungefilterte Rohbestand) sichern, NIE die
+    // aktive Ansicht `frame`. `frame` ist bei aktiver Blacklist/Medien-/
+    // Jahres- bzw. Ausreisser-Filter ein sliceRows-Abzug mit gekuerzten
+    // Spalten. Wuerde der gesichert, waeren die herausgefilterten Zeilen nach
+    // dem Reload endgueltig weg - gesperrte Artists liessen sich nicht mehr
+    // entsperren, Ausreisser-Jahrgaenge nicht zurueckschalten. Die Filter
+    // leben ausschliesslich in `settings` und werden beim Laden neu angewendet.
+    const source = _rawFrame();
     const cols = {};
     const types = {};
-    for (const [name, col] of Object.entries(frame.cols)) {
+    for (const [name, col] of Object.entries(source.cols)) {
       cols[name] = col.data;
       types[name] = col.type;
     }
     const payload = {
-      cols, types, n: frame.n, dict: frame.meta,
+      cols, types, n: source.n, dict: source.meta || frame.meta,
       at: Date.now(), fileNames: meta.fileNames, quality, settings: { ...settings },
       profile: opts.profile || "",
     };
@@ -434,8 +490,21 @@ export async function loadCache() {
     } else {
       quality = null;
     }
-    settings.only_music = !!(payload.settings && payload.settings.only_music);
-    settings.years = (payload.settings && Array.isArray(payload.settings.years)) ? payload.settings.years.slice() : [];
+    // Die gespeicherten Einstellungen komplett zuruecklesen. saveCache legt
+    // das ganze settings-Objekt ab - wird hier nur ein Teil gelesen, waeren
+    // Blacklist, Zeitzone und Profil nach dem Reload stillschweigend weg und
+    // die gefilterte Ansicht wuerde ohne sie neu aufgebaut. Die Felder werden
+    // direkt (ohne die Setter) belegt, damit rebuildActiveFrame nur EINMAL
+    // mit vollstaendig belegten Einstellungen laeuft.
+    const saved = payload.settings || {};
+    settings.tz_mode = saved.tz_mode === "local" ? "local" : "utc";
+    settings.tz = typeof saved.tz === "string" ? saved.tz.slice(0, 60) : "";
+    settings.profile = typeof saved.profile === "string" ? saved.profile.slice(0, 60) : (payload.profile || "");
+    settings.only_music = !!saved.only_music;
+    // Blacklist: getrimmt, dedupliziert, hoechstens 200 - wie setArtistBlacklist.
+    settings.artist_blacklist = _cleanBlacklist(saved.artist_blacklist);
+    // Jahre: ganzzahlig, dedupliziert, sortiert, hoechstens 40 - wie setYears.
+    settings.years = _cleanYears(saved.years);
     rebuildActiveFrame();
     return meta;
   } catch (e) {

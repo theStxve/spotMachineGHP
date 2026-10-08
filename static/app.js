@@ -3245,6 +3245,11 @@ async function checkExistingSession() {
             applyQuality(res.quality);
             if(res.media) applyMediaInfo(res.media);
             if(res.blacklist) renderBlacklist(res.blacklist);
+            // Die Einstellungen (Zeitzone, Medien-Toggle, Profil, Blacklist)
+            // koennen aus dem Cache stammen und weichen dann von den noch
+            // leeren UI-Feldern ab - darum einmal frisch einlesen. Sonst waere
+            // z. B. der lokale Zeitzonen-Schalter nach dem Reload ausgegraut.
+            await loadSettings();
             lucide.createIcons();
             showToast(`Datensatz aktiv: ${res.total_streams.toLocaleString()} Streams`);
         }
