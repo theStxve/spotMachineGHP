@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spotify Time Machine</title>
+  <link rel="stylesheet" href="static/style.css" />
+  <!-- Lokal eingebettet: keine Requests an Dritte, funktioniert offline.
+       Der CDN-Fallback greift nur, falls die Datei fehlt. -->
+  <script src="static/vendor/lucide.min.js"></script>
+  <script>window.lucide||document.write('<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"><\/script>')</script>
+  <script src="static/vendor/chart.umd.min.js"></script>
+  <script>window.Chart||document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>')</script>
+  <script>
+    window.WKMM_CONFIG = {"privacyMode": false, "idleSeconds": 0, "cacheDir": "IndexedDB in diesem Browser"};
+  </script>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <i data-lucide="music-2" class="logo-icon"></i>
+      Spotify Time Machine
+    </div>
+    <div style="position:absolute; right:1rem; top:1rem; display:flex; align-items:center; gap:0.75rem;">
+      <button id="header-sync-btn" class="btn btn-outline hidden" style="padding:0.4rem 0.85rem; font-size:0.8rem; border-color:var(--green); color:var(--green);">
+        <i data-lucide="refresh-cw"></i> Neue Streams synchronisieren
+      </button>
+      <div class="settings-header" id="settings-open" title="Einstellungen" style="position:static;">
+        <i data-lucide="settings"></i>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Upload Section -->
+    <section id="upload-section" class="card">
+      <div class="step-label">Schritt 1</div>
+      <h2>Deine Spotify-Daten hochladen</h2>
+      <div id="drop-zone" class="drop-zone">
+        <i data-lucide="upload-cloud" class="drop-icon"></i>
+        <p>Dateien hier rein ziehen (ZIP oder JSON)</p>
+        <p class="or">— oder —</p>
+        <label class="btn btn-outline" for="file-input">
+          <i data-lucide="folder-open"></i> Dateien auswählen
+        </label>
+        <input type="file" id="file-input" multiple accept=".zip,.json" hidden />
+      </div>
+      <div id="file-list" class="file-list hidden"></div>
+      <button id="upload-btn" class="btn btn-primary hidden">
+        <i data-lucide="zap"></i> Hochladen &amp; Analysieren
+      </button>
+      <div id="upload-status" class="status hidden"></div>
+      
+      <p class="privacy-note">
+        <i data-lucide="hard-drive"></i>
+        Läuft lokal auf deinem Rechner. Deine Daten bleiben auf diesem Gerät
+        () und werden nicht ins Internet übertragen.
+      </p>
+      
+    </section>
+
+    <!-- Tab-Nav -->
+    <nav class="tabs hidden" id="tab-nav">
+      <button class="tab-btn active" data-tab="recommend"><i data-lucide="sparkles"></i> Empfehlungen</button>
+
+      <button class="tab-btn" data-tab="playlist"><i data-lucide="list-music"></i> Playlist-Builder</button>
+      <button class="tab-btn" data-tab="compare"><i data-lucide="git-compare-arrows"></i> Vergleich</button>
+      <button class="tab-btn" data-tab="heatmap"><i data-lucide="grid-3x3"></i> Hörzeit</button>
+      <button class="tab-btn" data-tab="artists"><i data-lucide="mic-2"></i> Artists</button>
+      <button class="tab-btn" data-tab="skips"><i data-lucide="skip-forward"></i> Skips</button>
+      <button class="tab-btn" data-tab="discover"><i data-lucide="compass"></i> Entdecken</button>
+      <button class="tab-btn" data-tab="monthly"><i data-lucide="calendar"></i> Monatlich</button>
+      <button class="tab-btn" data-tab="sessions"><i data-lucide="clock-4"></i> Sessions</button>
+      <button class="tab-btn" data-tab="platforms"><i data-lucide="monitor-smartphone"></i> Plattformen</button>
+      <button class="tab-btn" data-tab="albums"><i data-lucide="disc-3"></i> Alben</button>
+      <button class="tab-btn" data-tab="search"><i data-lucide="search"></i> Song-Suche</button>
+
+      <button class="tab-btn" data-tab="behavior"><i data-lucide="activity"></i> Hörverhalten &amp; Loops</button>
+    </nav>
+
+    <!-- TAB: Recommend -->
+    <div class="tab-panel hidden card" id="panel-recommend">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ziel-Jahr</label>
+          <select id="rec-year"></select>
+        </div>
+        <div class="form-group">
+          <label>Anzahl Songs</label>
+          <input type="number" id="rec-topn" value="20" min="5" />
+        </div>
+        <div class="form-group">
+          <label>Min. Minuten</label>
+          <input type="number" id="rec-min" value="0.5" step="0.5" />
+        </div>
+      </div>
+      <button id="rec-btn" class="btn btn-primary"><i data-lucide="sparkles"></i> Generieren</button>
+      
+      <div id="rec-results" class="hidden">
+        <div class="filter-bar tag-filter-bar" id="rec-tag-filters" style="margin-top: 1rem;"></div>
+        <div class="filter-bar" style="margin-top: 1rem;">
+          <select id="rec-sort">
+            <option value="score">Nach Score</option>
+            <option value="plays">Nach Plays</option>
+            <option value="minutes">Nach Minuten</option>
+            <option value="artist">Nach Artist (A-Z)</option>
+          </select>
+          <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.9rem;">
+            <input type="checkbox" id="rec-direct-only"> Nur Direkte Treffer
+          </label>
+        </div>
+        <div id="rec-list" style="margin-top:1rem;"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Compare -->
+    <div class="tab-panel hidden card" id="panel-compare">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Jahr 1</label>
+          <select id="comp-y1"></select>
+        </div>
+        <div class="form-group">
+          <label>Jahr 2</label>
+          <select id="comp-y2"></select>
+        </div>
+      </div>
+      <button id="comp-btn" class="btn btn-primary"><i data-lucide="git-compare-arrows"></i> Vergleichen</button>
+      <div id="comp-results" class="compare-grid hidden" style="margin-top:1rem;"></div>
+    </div>
+
+    <!-- TAB: Heatmap -->
+    <div class="tab-panel hidden card" id="panel-heatmap">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="heat-year"><option value="all">Alle</option></select>
+        </div>
+        <div class="form-group">
+          <label>Ansichts-Modus</label>
+          <select id="heat-view-mode">
+            <option value="both">Beides (Matrix + 24h & Wochentag Kurven)</option>
+            <option value="grid">Nur Matrix (Wochentag x Stunde)</option>
+            <option value="curves">Nur Kurven (Tagesverlauf & Wochentage)</option>
+          </select>
+        </div>
+      </div>
+      <button id="heat-btn" class="btn btn-primary"><i data-lucide="grid-3x3"></i> Visualisieren</button>
+      
+      <div id="heat-stats-summary" class="stat-cards-grid hidden" style="margin-top:1.5rem;"></div>
+
+      <div id="heat-charts-section" class="hidden" style="margin-top:1.5rem; display:flex; flex-direction:column; gap:1.5rem;">
+        <div>
+          <h3 style="font-size:1rem; margin-bottom:0.5rem;"><i data-lucide="clock"></i> Hörgewohnheit im 24h-Tagesverlauf (Stunden 00:00 - 23:00)</h3>
+          <div class="artist-chart-wrap" style="height: 220px;">
+            <canvas id="heat-hourly-chart"></canvas>
+          </div>
+        </div>
+        <div>
+          <h3 style="font-size:1rem; margin-bottom:0.5rem;"><i data-lucide="calendar"></i> Wochentage im Vergleich (Montag bis Sonntag)</h3>
+          <div class="artist-chart-wrap" style="height: 200px;">
+            <canvas id="heat-daily-chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="heat-matrix-section" class="hidden" style="margin-top:2rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+          <h3 style="font-size:1rem;"><i data-lucide="layout-grid"></i> Stunden-Matrix (Wähle eine Zelle für Detail-Inspektion)</h3>
+          <span style="font-size:0.8rem; color:var(--muted)">Klick auf ein Feld zeigt Top Songs & Artists</span>
+        </div>
+        <div class="heatmap-wrap" style="overflow-x:auto;">
+          <div id="heatmap-container" class="heatmap-grid"></div>
+        </div>
+      </div>
+
+      <!-- Detail Drawer / Inspektions-Karte -->
+      <div id="heat-detail-card" class="card hidden" style="margin-top:1.5rem; border:1px solid var(--green); background:var(--surface2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:0.75rem; margin-bottom:1rem;">
+          <div>
+            <h3 id="heat-detail-title" style="color:var(--green); font-size:1.1rem;">Slot Details</h3>
+            <span id="heat-detail-subtitle" style="font-size:0.85rem; color:var(--muted);"></span>
+          </div>
+          <button id="heat-detail-close" class="btn btn-ghost" style="padding:0.3rem;"><i data-lucide="x"></i></button>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+          <div>
+            <h4 style="font-size:0.9rem; margin-bottom:0.6rem; color:var(--muted); text-transform:uppercase;">🔥 Top Songs in dieser Zeit</h4>
+            <div id="heat-detail-songs"></div>
+          </div>
+          <div>
+            <h4 style="font-size:0.9rem; margin-bottom:0.6rem; color:var(--muted); text-transform:uppercase;">🎤 Top Artists in dieser Zeit</h4>
+            <div id="heat-detail-artists"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Artists -->
+    <div class="tab-panel hidden card" id="panel-artists">
+      <div class="form-row">
+        <div class="form-group" style="flex:2;">
+          <label>Artist Name</label>
+          <input type="text" id="artist-input" list="artists-list" placeholder="Artist suchen..." />
+          <datalist id="artists-list"></datalist>
+        </div>
+      </div>
+      <button id="artist-btn" class="btn btn-primary"><i data-lucide="mic-2"></i> Suchen</button>
+      <div id="artist-results" class="hidden" style="margin-top:1.5rem;">
+        <div id="artist-header" style="margin-bottom:1rem;"></div>
+        
+        <div class="stat-cards-grid" id="artist-stats-grid" style="margin-bottom:1.5rem;"></div>
+
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem; margin-bottom:1.5rem;">
+          <div>
+            <h4 style="font-size:0.9rem; color:var(--muted); margin-bottom:0.5rem;"><i data-lucide="bar-chart-2"></i> Plays nach Jahren</h4>
+            <div class="artist-chart-wrap" style="height: 220px;">
+              <canvas id="artist-chart"></canvas>
+            </div>
+          </div>
+          <div id="artist-monthly-wrap">
+            <h4 style="font-size:0.9rem; color:var(--muted); margin-bottom:0.5rem;"><i data-lucide="trending-up"></i> Zeitlicher Monatsverlauf</h4>
+            <div class="artist-chart-wrap" style="height: 220px;">
+              <canvas id="artist-chart-monthly"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div id="artist-bio-container"></div>
+
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:1.5rem; margin-top:1.5rem;">
+          <div>
+            <h4 style="font-size:0.95rem; margin-bottom:0.75rem;"><i data-lucide="music"></i> Top Songs</h4>
+            <div id="artist-top-songs"></div>
+          </div>
+          <div>
+            <h4 style="font-size:0.95rem; margin-bottom:0.75rem;"><i data-lucide="disc"></i> Meistgehörte Alben</h4>
+            <div id="artist-top-albums"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Skips -->
+    <div class="tab-panel hidden card" id="panel-skips">
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="skip-year"><option value="all">Alle</option></select>
+        </div>
+        <div class="form-group">
+          <label>Min. Plays</label>
+          <input type="number" id="skip-min" value="5" min="1" />
+        </div>
+        <div class="form-group">
+          <label>Anzahl Songs</label>
+          <select id="skip-topn">
+            <option value="30">Top 30</option>
+            <option value="50">Top 50</option>
+            <option value="100">Top 100</option>
+            <option value="200">Top 200</option>
+            <option value="999999">Alle</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:2;">
+          <label>Filter</label>
+          <input type="text" id="skip-filter" placeholder="Song oder Artist filtern..." />
+        </div>
+      </div>
+      <button id="skip-btn" class="btn btn-primary"><i data-lucide="skip-forward"></i> Skip-Analyse</button>
+
+      <div id="skip-results" class="hidden" style="margin-top:1.25rem;">
+
+        <!-- Stat cards -->
+        <div id="skip-stat-cards" class="stat-cards-grid" style="margin-bottom:1.25rem;"></div>
+
+        <!-- Charts row 1: Distribution + Hourly -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-bottom:1rem;">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="bar-chart-2" style="width:12px;height:12px;"></i> Skip-Rate-Verteilung
+            </div>
+            <div style="position:relative;height:150px;"><canvas id="skip-dist-chart"></canvas></div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="clock" style="width:12px;height:12px;"></i> Skip-Rate nach Uhrzeit
+            </div>
+            <div style="position:relative;height:150px;"><canvas id="skip-hour-chart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Charts row 2: Artists + Year trend -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-bottom:1rem;">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="mic-2" style="width:12px;height:12px;"></i> Meist-geskippte Artists
+            </div>
+            <div style="position:relative;height:180px;"><canvas id="skip-artist-chart"></canvas></div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="trending-up" style="width:12px;height:12px;"></i> Skip-Trend nach Jahr
+            </div>
+            <div style="position:relative;height:180px;"><canvas id="skip-year-chart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Detailed list -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="list" style="width:12px;height:12px;"></i> Alle Songs — klicken für Details
+            </div>
+            <div style="display:flex;gap:0.5rem;">
+              <div class="sortable-header" data-sort="skip_rate" style="font-size:0.78rem;padding:0.2rem 0.5rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;">Skip-Rate <i data-lucide="chevron-down" style="width:11px;height:11px;"></i></div>
+              <div class="sortable-header" data-sort="play_count" style="font-size:0.78rem;padding:0.2rem 0.5rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;">Plays <i data-lucide="chevron-down" style="width:11px;height:11px;"></i></div>
+              <div class="sortable-header" data-sort="avg_ms_played" style="font-size:0.78rem;padding:0.2rem 0.5rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;">Avg Time <i data-lucide="chevron-down" style="width:11px;height:11px;"></i></div>
+            </div>
+          </div>
+          <div id="skip-list"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TAB: Discover -->
+    <div class="tab-panel hidden card" id="panel-discover">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ziel-Jahr für Entdeckungs-Radar</label>
+          <select id="disc-year"></select>
+        </div>
+      </div>
+      <button id="disc-btn" class="btn btn-primary"><i data-lucide="compass"></i> Entdeckungs-Analyse starten</button>
+
+      <!-- Discovery Stats Overview -->
+      <div id="disc-stats" class="stat-cards-grid hidden" style="margin-top:1.5rem;"></div>
+
+      <!-- Section: New Artists in this Year -->
+      <div id="disc-new-artists-section" class="hidden" style="margin-top:2rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+          <h3 style="font-size:1.1rem; color:var(--green);"><i data-lucide="sparkles"></i> Neu entdeckte Artists im Ziel-Jahr</h3>
+          <span style="font-size:0.8rem; color:var(--muted);">Künstler, die du vor diesem Jahr noch nie gehört hast</span>
+        </div>
+        <div id="disc-new-artists-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:0.75rem;"></div>
+      </div>
+
+      <!-- Section: Missed Tracks of Top Artists -->
+      <div id="disc-missed-section" class="hidden" style="margin-top:2rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+          <h3 style="font-size:1.1rem;"><i data-lucide="disc"></i> Verpasste Perlen deiner Top-Künstler</h3>
+          <span style="font-size:0.8rem; color:var(--muted);">Von deinen Lieblingskünstlern, aber in anderen Jahren gehört</span>
+        </div>
+        <div id="disc-missed-list" class="discover-grid"></div>
+      </div>
+
+      <!-- Section: Forgotten Gems / Nostalgie -->
+      <div id="disc-forgotten-section" class="hidden" style="margin-top:2rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+          <h3 style="font-size:1.1rem; color:#ff9f43;"><i data-lucide="archive"></i> Vergessene Favoriten (Nostalgie-Archiv)</h3>
+          <span style="font-size:0.8rem; color:var(--muted);">Früher gesuchtet (mind. 10 Plays), danach nie wieder gehört</span>
+        </div>
+        <div id="disc-forgotten-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:0.75rem;"></div>
+      </div>
+
+      <!-- Section: Live Discovery Timeline with Search -->
+      <div style="margin-top:2.5rem; border-top:1px solid var(--border); padding-top:1.5rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+          <div>
+            <h3 style="font-size:1.1rem;"><i data-lucide="history"></i> Komplette Chronik: Artist-Entdeckungen</h3>
+            <span style="font-size:0.8rem; color:var(--muted);">Wann du welchen Artist zum ersten Mal gehört hast (chronologisch geordnet)</span>
+          </div>
+          <input type="text" id="disc-timeline-search" placeholder="Artist in Chronik suchen..." style="padding:0.4rem 0.8rem; font-size:0.85rem; width:220px;" />
+        </div>
+        <div id="disc-timeline" style="max-height:480px; overflow-y:auto; padding-right:6px; display:flex; flex-direction:column; gap:0.5rem;"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Monthly -->
+    <div class="tab-panel hidden card" id="panel-monthly">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="monthly-year"><option value="all">Alle</option></select>
+        </div>
+      </div>
+
+      <div id="monthly-results" class="hidden">
+        <!-- Hörzeit + Streams -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-top:1rem;">
+          <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;">Hörzeit &amp; Streams</div>
+          <div style="position:relative;height:240px;"><canvas id="monthly-chart"></canvas></div>
+        </div>
+
+        <!-- Artists + Skip-Rate -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-top:1rem;">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="mic-2" style="width:12px;height:12px;"></i> Unique Artists pro Monat
+            </div>
+            <div style="position:relative;height:180px;"><canvas id="monthly-artists-chart"></canvas></div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="skip-forward" style="width:12px;height:12px;"></i> Skip-Rate Trend
+            </div>
+            <div style="position:relative;height:180px;"><canvas id="monthly-skip-chart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Top Song per Month -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-top:1rem;">
+          <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.4rem;">
+            <i data-lucide="trophy" style="width:12px;height:12px;"></i> Top Song des Monats
+          </div>
+          <div id="monthly-top-songs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Sessions -->
+    <div class="tab-panel hidden card" id="panel-sessions">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="sessions-year"><option value="all">Alle</option></select>
+        </div>
+      </div>
+
+      <div id="sessions-results" class="hidden">
+        <div id="sessions-stats" class="stat-cards-grid" style="margin-top:1rem;margin-bottom:1rem;"></div>
+
+        <!-- Session length histogram -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1rem;">
+          <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+            <i data-lucide="bar-chart-2" style="width:12px;height:12px;"></i> Session-Längen Verteilung
+          </div>
+          <div style="position:relative;height:200px;"><canvas id="sessions-chart"></canvas></div>
+        </div>
+
+        <!-- Weekday + Hour charts side by side -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-bottom:1rem;">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="calendar-days" style="width:12px;height:12px;"></i> Sessions nach Wochentag
+            </div>
+            <div style="position:relative;height:200px;"><canvas id="sessions-weekday-chart"></canvas></div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+              <i data-lucide="clock" style="width:12px;height:12px;"></i> Wann startest du Sessions?
+            </div>
+            <div style="position:relative;height:200px;"><canvas id="sessions-hour-chart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Avg duration per weekday -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:1rem;">
+          <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+            <i data-lucide="timer" style="width:12px;height:12px;"></i> Ø Session-Länge nach Wochentag
+          </div>
+          <div style="position:relative;height:180px;"><canvas id="sessions-weekday-dur-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Platforms -->
+    <div class="tab-panel hidden card" id="panel-platforms">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="platforms-year"><option value="all">Alle</option></select>
+        </div>
+      </div>
+      <div class="artist-chart-wrap" style="height: 300px; margin: 1rem 0;">
+        <canvas id="platforms-chart"></canvas>
+      </div>
+      <div id="platforms-table" style="margin-top:1rem;"></div>
+    </div>
+
+    
+    <!-- TAB: Behavior & Loops -->
+    <div class="tab-panel hidden card" id="panel-behavior">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="behavior-year"><option value="all">Alle</option></select>
+        </div>
+      </div>
+      <button id="behavior-btn" class="btn btn-primary"><i data-lucide="activity"></i> Analysieren</button>
+
+      <div id="behavior-results" class="hidden" style="margin-top:1.5rem;">
+        <!-- Top Stats -->
+        <div id="behavior-stats-summary" class="stat-cards-grid" style="margin-bottom:1.5rem;"></div>
+
+        <!-- Charts Grid -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem; margin-bottom:1.5rem;">
+          <div>
+            <h4 style="font-size:0.95rem; margin-bottom:0.5rem;"><i data-lucide="sun-moon"></i> Tageszeiten (Nacht vs. Tag)</h4>
+            <div class="artist-chart-wrap" style="height: 220px;">
+              <canvas id="behavior-dayparts-chart"></canvas>
+            </div>
+          </div>
+          <div>
+            <h4 style="font-size:0.95rem; margin-bottom:0.5rem;"><i data-lucide="log-out"></i> Warum beendest du Songs?</h4>
+            <div class="artist-chart-wrap" style="height: 220px;">
+              <canvas id="behavior-reason-end-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loop Finder & Start Triggers -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem;">
+          <div>
+            <h4 style="font-size:0.95rem; margin-bottom:0.75rem; color:var(--green);"><i data-lucide="repeat"></i> Loop-Obsessions (Wiederholungen auf Dauerschleife)</h4>
+            <div id="behavior-loops-list"></div>
+          </div>
+          <div>
+            <h4 style="font-size:0.95rem; margin-bottom:0.75rem;"><i data-lucide="play-circle"></i> Wie startest du Musik?</h4>
+            <div id="behavior-start-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Albums -->
+    <div class="tab-panel hidden card" id="panel-albums">
+      <div class="form-row" style="align-items:flex-end; gap:0.75rem; flex-wrap:wrap;">
+        <div class="form-group" style="flex:1; min-width:120px;">
+          <label>Jahr</label>
+          <select id="albums-year"><option value="all">Alle Jahre</option></select>
+        </div>
+        <div class="form-group" style="flex:2; min-width:180px;">
+          <label>Suchen / Filtern</label>
+          <input type="text" id="albums-filter" placeholder="Album oder Artist..." autocomplete="off" />
+        </div>
+        <div class="form-group" style="flex:1; min-width:130px;">
+          <label>Sortierung</label>
+          <select id="albums-sort">
+            <option value="play_count">Plays</option>
+            <option value="total_minutes">Hörzeit</option>
+            <option value="unique_tracks">Tracks</option>
+            <option value="engagement_score">Score</option>
+          </select>
+        </div>
+      </div>
+      <div id="albums-top3" style="margin-top:1.25rem;"></div>
+      <div id="albums-list" style="margin-top:0.75rem;"></div>
+    </div>
+
+
+    <!-- TAB: Song-Suche -->
+    <div class="tab-panel hidden card" id="panel-search">
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group" style="flex:3;">
+          <label>Song oder Artist suchen</label>
+          <input type="text" id="search-input" placeholder="z.B. SNOWCRASH, Cynthoni, Burn..." autocomplete="off" />
+        </div>
+      </div>
+      <div id="search-results" style="margin-top:1.5rem;">
+        <p id="search-placeholder" style="color:var(--muted); font-size:0.9rem; text-align:center; padding:2rem 0;">
+          Fang an zu tippen um Songs zu finden...
+        </p>
+      </div>
+    </div>
+
+
+    <!-- TAB: Playlist-Builder -->
+    <div class="tab-panel hidden card" id="panel-playlist">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem; border-bottom:1px solid var(--border); padding-bottom:1rem;">
+        <div>
+          <h2 style="font-size:1.3rem; display:flex; align-items:center; gap:0.5rem; margin-bottom:0.25rem;">
+            <i data-lucide="list-music" style="color:var(--green);"></i> Smart Playlist-Builder &amp; Mix-Generator
+          </h2>
+          <p style="font-size:0.85rem; color:var(--muted); margin:0;">
+            Erstelle dir maßgeschneiderte Playlists basierend auf Songs, Artists, Alben, Jahren oder Genres &mdash; kombiniere deine Bibliotheks-Favoriten mit frischen Last.fm Entdeckungen.
+          </p>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span id="playlist-basket-badge" style="background:rgba(29,185,84,0.15); color:var(--green); border:1px solid rgba(29,185,84,0.3); padding:0.35rem 0.75rem; border-radius:20px; font-weight:600; font-size:0.82rem;">
+            🛒 0 im Korb
+          </span>
+        </div>
+      </div>
+
+      <!-- Mode Selector (5 Pills) -->
+      <div style="margin-bottom:1.25rem;">
+        <label style="font-size:0.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:0.5rem;">
+          1. Wähle die Basis deiner Playlist
+        </label>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;" id="pl-mode-selector">
+          <button type="button" class="btn btn-primary pl-mode-btn" data-mode="song"><i data-lucide="music"></i> Song</button>
+          <button type="button" class="btn btn-outline pl-mode-btn" data-mode="artist"><i data-lucide="mic-2"></i> Artist</button>
+          <button type="button" class="btn btn-outline pl-mode-btn" data-mode="album"><i data-lucide="disc"></i> Album</button>
+          <button type="button" class="btn btn-outline pl-mode-btn" data-mode="year"><i data-lucide="calendar"></i> Jahr</button>
+          <button type="button" class="btn btn-outline pl-mode-btn" data-mode="genre"><i data-lucide="tag"></i> Genre / Vibe</button>
+        </div>
+      </div>
+
+      <!-- Dynamic Inputs depending on mode -->
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:1.25rem; margin-bottom:1.25rem;">
+        <!-- MODE: SONG -->
+        <div id="pl-input-song" class="pl-input-section">
+          <div class="form-group" style="position:relative;">
+            <label>Song &amp; Artist auswählen (Tippen für Vorschläge aus deiner Bibliothek)</label>
+            <input type="text" id="pl-song-search" placeholder="z.B. SNOWCRASH, Oxy is dead, Where Is My Light?..." autocomplete="off" />
+            <div id="pl-song-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--surface); border:1px solid var(--border); border-radius:8px; z-index:100; max-height:240px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:4px;"></div>
+            <div id="pl-song-selected" style="display:none; margin-top:0.6rem; background:rgba(29,185,84,0.1); border:1px solid rgba(29,185,84,0.3); border-radius:8px; padding:0.5rem 0.8rem; font-size:0.85rem;">
+              <span style="color:var(--muted);">Ausgewählt: </span>
+              <strong id="pl-song-selected-txt" style="color:var(--text);"></strong>
+              <button type="button" id="pl-song-clear" style="background:none; border:none; color:var(--muted); cursor:pointer; margin-left:0.5rem;">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODE: ARTIST -->
+        <div id="pl-input-artist" class="pl-input-section hidden">
+          <div class="form-group" style="position:relative;">
+            <label>Artist Name</label>
+            <input type="text" id="pl-artist-search" placeholder="z.B. Cynthoni, Sewerslvt, Ricine..." autocomplete="off" />
+            <div id="pl-artist-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--surface); border:1px solid var(--border); border-radius:8px; z-index:100; max-height:220px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:4px;"></div>
+            <div id="pl-artist-quick-chips" style="margin-top:0.6rem; display:flex; flex-wrap:wrap; gap:0.4rem; align-items:center;">
+              <span style="font-size:0.75rem; color:var(--muted);">Schnellauswahl:</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODE: ALBUM -->
+        <div id="pl-input-album" class="pl-input-section hidden">
+          <div class="form-row" style="align-items:flex-end;">
+            <div class="form-group" style="flex:2; position:relative;">
+              <label>Album-Titel</label>
+              <input type="text" id="pl-album-search" placeholder="z.B. SNØWCR4SH N' BURN..." autocomplete="off" />
+              <div id="pl-album-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--surface); border:1px solid var(--border); border-radius:8px; z-index:100; max-height:220px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:4px;"></div>
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label>Artist (optional)</label>
+              <input type="text" id="pl-album-artist" placeholder="z.B. Cynthoni" autocomplete="off" />
+            </div>
+          </div>
+        </div>
+
+        <!-- MODE: YEAR -->
+        <div id="pl-input-year" class="pl-input-section hidden">
+          <div class="form-group" style="max-width:320px;">
+            <label>Ziel-Jahr auswählen</label>
+            <select id="pl-year-select"></select>
+            <small style="color:var(--muted); font-size:0.78rem; display:block; margin-top:0.3rem;">Kombiniert deine Jahres-Highlights mit den Top-Releases dieser Periode.</small>
+          </div>
+        </div>
+
+        <!-- MODE: GENRE -->
+        <div id="pl-input-genre" class="pl-input-section hidden">
+          <div class="form-group">
+            <label>Genre / Tag / Vibe</label>
+            <input type="text" id="pl-genre-search" placeholder="z.B. breakcore, synthwave, hyperpop, metal, phonk..." autocomplete="off" />
+            <div style="margin-top:0.7rem;">
+              <span style="font-size:0.75rem; color:var(--muted); display:block; margin-bottom:0.4rem;">Beliebte Tags zum Anklicken:</span>
+              <div style="display:flex; flex-wrap:wrap; gap:0.4rem;" id="pl-genre-tags-list">
+                <span class="pl-genre-chip" data-genre="breakcore">⚡ Breakcore</span>
+                <span class="pl-genre-chip" data-genre="electronic">🔊 Electronic</span>
+                <span class="pl-genre-chip" data-genre="synthwave">🌆 Synthwave</span>
+                <span class="pl-genre-chip" data-genre="phonk">🚗 Phonk</span>
+                <span class="pl-genre-chip" data-genre="metal">🎸 Metal</span>
+                <span class="pl-genre-chip" data-genre="ambient">🌙 Ambient</span>
+                <span class="pl-genre-chip" data-genre="lo-fi">☕ Lo-Fi</span>
+                <span class="pl-genre-chip" data-genre="hip hop">🎤 Hip-Hop</span>
+                <span class="pl-genre-chip" data-genre="indie">💫 Indie</span>
+                <span class="pl-genre-chip" data-genre="shoegaze">🌀 Shoegaze</span>
+                <span class="pl-genre-chip" data-genre="techno">🎛️ Techno</span>
+                <span class="pl-genre-chip" data-genre="hyperpop">✨ Hyperpop</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fine Tuning Controls Row -->
+        <div style="margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border); display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; align-items:flex-end;">
+          <div class="form-group">
+            <label>Playlist-Länge</label>
+            <select id="pl-limit-select">
+              <option value="15">15 Songs (Kompakter Mix)</option>
+              <option value="25" selected>25 Songs (Standard)</option>
+              <option value="40">40 Songs (Längere Session)</option>
+              <option value="60">60 Songs (Mega-Playlist)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Mix-Zusammenstellung</label>
+            <select id="pl-mix-select">
+              <option value="both" selected>🔀 50/50 Mix (Favoriten &amp; Entdeckungen)</option>
+              <option value="discover">✨ Nur Entdeckungen (Frischer Wind / Last.fm)</option>
+              <option value="library">📚 Nur meine Bibliothek (Bekannte Songs)</option>
+            </select>
+          </div>
+          <div>
+            <button type="button" id="pl-generate-btn" class="btn btn-primary" style="width:100%; height:40px; font-weight:700;">
+              <i data-lucide="wand-2"></i> Playlist erstellen
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MAIN RESULTS SPLIT VIEW -->
+      <div id="pl-results-area" class="hidden">
+        <div class="playlist-grid">
+          
+          <!-- LEFT: Generated Suggestions -->
+          <div style="min-width:0;">
+            <!-- Hero Playlist Header -->
+            <div id="pl-hero-card" style="background:linear-gradient(135deg, rgba(29,185,84,0.12), rgba(91,141,239,0.08)); border:1px solid rgba(29,185,84,0.3); border-radius:12px; padding:1.2rem; margin-bottom:1rem;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
+                <div style="flex:1; min-width:200px;">
+                  <div style="font-size:0.75rem; text-transform:uppercase; color:var(--green); font-weight:700; letter-spacing:0.5px; margin-bottom:0.25rem;">
+                    Generierter Vorschlag
+                  </div>
+                  <h3 id="pl-hero-title" style="font-size:1.25rem; font-weight:800; color:var(--text); margin-bottom:0.35rem;"></h3>
+                  <p id="pl-hero-desc" style="font-size:0.82rem; color:var(--muted); margin:0;"></p>
+                </div>
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                  <button type="button" id="pl-add-all-btn" class="btn btn-primary" style="font-size:0.8rem; padding:0.4rem 0.8rem;">
+                    <i data-lucide="plus-circle"></i> Alle in Korb (<span id="pl-gen-count">0</span>)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Track List -->
+            <div id="pl-tracks-list" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
+          </div>
+
+          <!-- RIGHT: My Playlist Basket (Interactive Manager) -->
+          <div style="min-width:0;">
+            <div style="background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:1.1rem; position:sticky; top:1rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom:1px solid var(--border); padding-bottom:0.75rem;">
+                <div>
+                  <h4 style="font-size:1rem; margin:0; display:flex; align-items:center; gap:0.4rem;">
+                    <i data-lucide="list-music" style="color:var(--green); width:16px; height:16px;"></i> Meine Playlist
+                  </h4>
+                  <div id="pl-basket-meta" style="font-size:0.75rem; color:var(--muted); margin-top:0.2rem;">0 Songs &middot; 0 min</div>
+                </div>
+                <div style="display:flex; gap:0.3rem;">
+                  <button type="button" id="pl-basket-shuffle" class="btn btn-ghost" title="Zufällig mischen" style="padding:0.3rem 0.5rem; font-size:0.75rem;">
+                    <i data-lucide="shuffle" style="width:13px; height:13px;"></i>
+                  </button>
+                  <button type="button" id="pl-basket-clear" class="btn btn-ghost" title="Korb leeren" style="padding:0.3rem 0.5rem; font-size:0.75rem; color:#e5534b;">
+                    <i data-lucide="trash-2" style="width:13px; height:13px;"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Export / Copy Tools -->
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.85rem;">
+                <button type="button" id="pl-copy-text-btn" class="btn btn-outline" style="font-size:0.78rem; padding:0.4rem 0.5rem; justify-content:center;">
+                  <i data-lucide="copy" style="width:13px; height:13px;"></i> Text kopieren
+                </button>
+                <button type="button" id="pl-export-m3u-btn" class="btn btn-outline" style="font-size:0.78rem; padding:0.4rem 0.5rem; justify-content:center;">
+                  <i data-lucide="download" style="width:13px; height:13px;"></i> .m3u Export
+                </button>
+              </div>
+
+              <!-- Basket Items Container -->
+              <div id="pl-basket-items" style="max-height:480px; overflow-y:auto; display:flex; flex-direction:column; gap:0.35rem; padding-right:4px;">
+                <div id="pl-basket-empty" style="text-align:center; padding:2rem 1rem; color:var(--muted); font-size:0.85rem;">
+                  <i data-lucide="disc" style="width:32px; height:32px; opacity:0.3; margin-bottom:0.5rem; display:block; margin-left:auto; margin-right:auto;"></i>
+                  Dein Korb ist noch leer.<br>Generiere Tracks und klicke auf <strong>+</strong> um Songs hinzuzufügen.
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Song Detail Modal -->
+  <div id="song-detail-modal" class="modal-overlay hidden">
+    <div class="modal card" style="max-width:700px; width:100%; box-sizing:border-box;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.2rem;">
+        <div style="flex:1; min-width:0;">
+          <h2 id="song-modal-title" style="font-size:1.35rem; color:var(--green); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></h2>
+          <div id="song-modal-artist" style="font-size:0.9rem; color:var(--muted); margin-top:0.2rem;"></div>
+        </div>
+        <button id="song-modal-close" class="btn btn-ghost" style="padding:0.3rem; flex-shrink:0; margin-left:0.5rem;"><i data-lucide="x"></i></button>
+      </div>
+
+      <div id="song-modal-body">
+        <div style="text-align:center; padding:2rem 0; color:var(--muted);">Lade...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Album Detail Modal -->
+  <div id="album-detail-modal" class="modal-overlay hidden">
+    <div class="modal card" style="max-width:700px; width:100%; box-sizing:border-box;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.2rem;">
+        <div style="flex:1; min-width:0;">
+          <h2 id="album-modal-title" style="font-size:1.35rem; color:var(--green); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></h2>
+          <div id="album-modal-artist" style="font-size:0.9rem; color:var(--muted); margin-top:0.2rem;"></div>
+        </div>
+        <button id="album-modal-close" class="btn btn-ghost" style="padding:0.3rem; flex-shrink:0; margin-left:0.5rem;"><i data-lucide="x"></i></button>
+      </div>
+      <div id="album-modal-body">
+        <div style="text-align:center; padding:2rem 0; color:var(--muted);">Lade...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal card">
+      <h2>Einstellungen</h2>
+      <div class="form-group" style="margin-top: 1rem;">
+        <label>Last.fm Username (für automatischen Stream-Sync)</label>
+        <input type="text" id="lastfm-user" placeholder="z.B. DeinUsername" />
+        <span style="font-size:0.75rem; color:var(--muted);">Muss mit Spotify scrobbeln (<a href="https://www.last.fm/settings/applications" target="_blank" style="color:var(--green);">last.fm/settings/applications</a>)</span>
+      </div>
+
+      <div class="form-group" style="margin-top: 1rem;">
+        <label>Last.fm API Key</label>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <input type="password" id="lastfm-key" placeholder="••••••••••••••••••••••••••••••••" style="flex:1;" />
+          <button type="button" id="lastfm-toggle" class="btn btn-ghost" title="Key anzeigen/verbergen">
+            <i data-lucide="eye"></i>
+          </button>
+        </div>
+      </div>
+      <p style="margin-top:0.4rem; font-size:0.85rem;"><a href="https://www.last.fm/api/account/create" target="_blank" style="color:var(--green);">Hier API Key erstellen</a></p>
+      <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+        <button id="lastfm-test" class="btn btn-outline">Key Testen</button>
+      </div>
+      <div id="settings-status" style="margin-top:0.5rem; font-size:0.85rem; margin-bottom:1rem;"></div>
+
+      <!-- Sync Box in Settings -->
+      <div id="settings-sync-box" style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:0.9rem; margin-bottom:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+          <strong style="font-size:0.9rem;"><i data-lucide="refresh-cw" style="width:14px;height:14px;color:var(--green);"></i> Live Stream-Sync</strong>
+          <span id="sync-status-badge" style="font-size:0.75rem; color:var(--muted);">Bereit</span>
+        </div>
+        <p id="sync-latest-info" style="font-size:0.8rem; color:var(--muted); margin-bottom:0.75rem;">Lade aktuellen Stand...</p>
+        <button id="modal-sync-btn" class="btn btn-primary" style="width:100%; font-size:0.85rem; padding:0.5rem;">
+          <i data-lucide="download-cloud"></i> Neue Streams jetzt abrufen
+        </button>
+      </div>
+      
+      <div class="settings-toggles">
+        <div class="toggle-row">
+          <label>Genre-Tags auf Song-Karten</label>
+          <input type="checkbox" id="toggle-genre-tags" />
+        </div>
+        <div class="toggle-row">
+          <label>Ähnliche Songs (Last.fm) in Empfehlungen</label>
+          <input type="checkbox" id="toggle-similar-songs" />
+        </div>
+        <div class="toggle-row">
+          <label>Artist-Infos (Bio, Listeners) im Artist-Tab</label>
+          <input type="checkbox" id="toggle-artist-info" />
+        </div>
+        <div class="toggle-row">
+          <label>Globale Track-Stats (Listeners, Playcount)</label>
+          <input type="checkbox" id="toggle-track-stats" />
+        </div>
+      </div>
+      
+      <button id="settings-save" class="btn btn-primary" style="margin-top:1.5rem; width:100%;">Speichern & Schließen</button>
+    </div>
+  </div>
+
+  <div id="loader" class="loader hidden">
+    <div class="spinner"></div>
+    <p id="loader-text">Lade...</p>
+  </div>
+
+  <script type="module" src="js/shim.js"></script>
+<script src="static/app.js"></script>
+</body>
+</html>
