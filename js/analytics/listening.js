@@ -6,7 +6,7 @@
  * sortiert - siehe listening_helpers.js, warum das nicht Array.sort() sein darf.
  */
 
-import { build_year_profile, compute_engagementHead } from "./core.js";
+import { build_year_profile, compute_engagementHead, computeEngagement } from "./core.js";
 import {
   pandasArgsort, sortRecordsUnstableDesc, sortRecordsStableDesc, sortRecordsLexDesc,
   groupByCols, totalOf, nuniqueOf, modeSmallest, withColumn, colValues, compareStrings,
@@ -155,6 +155,9 @@ function topArtistsByMs(ydf, n) {
 }
 
 export function get_discover_tracks(df, year, topN) {
+  // year === null/"": Gesamtansicht ueber alle Jahre (Spiegel von
+  // recommender_core._discover_all_years).
+  if (year === null || year === undefined || year === "") return discoverAllYears(df, topN);
   const y = asInt(year);
   const ydf = df.eq("year", y);
 
@@ -212,6 +215,133 @@ export function get_discover_tracks(df, year, topN) {
     missed_tracks: missedTracks,
     new_discovered_artists: newArtists,
     forgotten_gems: forgottenGems,
+  };
+}
+
+// ── year=all: Gesamtansicht ueber alle Jahre ─────────────────────────────────
+
+/** Sortiert Engagement-Score absteigend (NaN ans Ende), Gleichstand nach song_id. */
+function compareDiscoverEngagement(a, b) {
+  const aNan = Number.isNaN(a.engagement_score);
+  const bNan = Number.isNaN(b.engagement_score);
+  if (aNan || bNan) {
+    if (aNan && bNan) return compareStrings(a.song_id, b.song_id);
+    return aNan ? 1 : -1;
+  }
+  if (a.engagement_score !== b.engagement_score) return b.engagement_score - a.engagement_score;
+  return compareStrings(a.song_id, b.song_id);
+}
+
+/**
+ * year=null: Gesamtansicht ueber alle Jahre. Regeln wie
+ * recommender_core._discover_all_years - Kommentare dort sind massgeblich.
+ */
+function discoverAllYears(df, topN) {
+  const artistCol = df.col("artist").data;
+  const yearCol = df.col("year").data;
+  const songCol = df.col("song_id").data;
+  const tsCol = df.col("ts").data;
+  const minCol = df.col("minutes_played").data;
+
+  const yg = df.groupBy("year");
+  const years = [];
+  for (let i = 0; i < yg.size; i++) {
+    const y = Number(yg.keyValues[i]);
+    if (Number.isFinite(y)) years.push(y);
+  }
+  years.sort((a, b) => a - b);
+  if (!df.n || !years.length) {
+    return {
+      year: "all", total_artists: 0, new_artists_count: 0,
+      missed_tracks: [], new_discovered_artists: [], forgotten_gems: [],
+    };
+  }
+  const maxYear = years[years.length - 1];
+  const rows = df.rows();
+
+  // 1. Erst-Entdeckungen: Jahr der ersten Wiedergabe je Artist
+  const firstYear = new Map();
+  for (const r of rows) {
+    const a = artistCol[r];
+    if (a === null || a === undefined) continue;
+    const y = yearCol[r];
+    if (!Number.isFinite(y)) continue;
+    const cur = firstYear.get(a);
+    if (cur === undefined || y < cur) firstYear.set(a, y);
+  }
+  const agg = new Map();
+  for (const r of rows) {
+    const a = artistCol[r];
+    const y = yearCol[r];
+    if (!Number.isFinite(y) || firstYear.get(a) !== y) continue;
+    let s = agg.get(a);
+    if (!s) { s = { year: y, play_count: 0, total_min: 0 }; agg.set(a, s); }
+    const t = tsCol[r];
+    if (t !== null && t !== undefined && !Number.isNaN(t)) s.play_count++;
+    const m = minCol[r];
+    if (Number.isFinite(m)) s.total_min += m;
+  }
+  const fresh = [];
+  for (const [name, s] of agg) {
+    fresh.push({ artist: name, year: s.year, play_count: s.play_count, total_min: round1(s.total_min) });
+  }
+  fresh.sort((a, b) => (b.play_count - a.play_count) || compareStrings(a.artist, b.artist));
+  const newArtists = fresh.slice(0, 15);
+
+  // 2. Verpasste Perlen ueber alle Jahre: Vereinigung der Einzeljahre
+  const candidates = new Set();
+  for (const y of years) {
+    const ydf = df.eq("year", y);
+    if (ydf.n === 0) continue;
+    const topSet = new Set(topArtistsByMs(ydf, 30));
+    if (!topSet.size) continue;
+    const yearSongs = new Set(colValues(ydf, "song_id"));
+    const sub = df.inSet("artist", topSet).notInSet("song_id", yearSongs);
+    for (const id of colValues(sub, "song_id")) {
+      if (id !== null && id !== undefined) candidates.add(id);
+    }
+  }
+  let missed = [];
+  if (candidates.size) {
+    const eng = computeEngagement(df.inSet("song_id", candidates));
+    eng.sort(compareDiscoverEngagement);
+    missed = eng.slice(0, topN);
+  }
+
+  // 3. Vergessene Perlen: >= 10 Plays und vor dem juesten Jahr gestoppt
+  const lastYear = new Map();
+  for (const r of rows) {
+    const id = songCol[r];
+    const y = yearCol[r];
+    if (id === null || id === undefined || !Number.isFinite(y)) continue;
+    const cur = lastYear.get(id);
+    if (cur === undefined || y > cur) lastYear.set(id, y);
+  }
+  const g = groupByCols(df, "song_id");
+  const gTrack = g.first("track");
+  const gArtist = g.first("artist");
+  const gPlay = g.count("ts");
+  const gMin = g.sum("minutes_played");
+  const gems = [];
+  for (let i = 0; i < g.size; i++) {
+    if (gPlay[i] < 10) continue;
+    const last = lastYear.get(g.keyValues[i]);
+    if (years.length > 1 && !(last < maxYear)) continue;
+    gems.push({
+      song_id: g.keyValues[i], track: gTrack[i], artist: gArtist[i],
+      play_count: gPlay[i], total_min: round1(gMin[i]),
+    });
+  }
+  gems.sort((a, b) => (b.play_count - a.play_count) || compareStrings(a.song_id, b.song_id));
+  const forgotten = gems.slice(0, 15);
+
+  return {
+    year: "all",
+    total_artists: nuniqueOf(df, "artist"),
+    new_artists_count: newArtists.length,
+    missed_tracks: missed,
+    new_discovered_artists: newArtists,
+    forgotten_gems: forgotten,
   };
 }
 

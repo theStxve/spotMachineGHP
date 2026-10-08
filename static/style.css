@@ -35,6 +35,10 @@ select, input { background: var(--surface2); border: 1px solid var(--border); co
 .tab-btn.active { background: rgba(29, 185, 84, 0.15); border-color: var(--green); color: var(--green); font-weight: 700; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
+/* Modal ueber Modal: der Song-Dialog wird aus dem Album-Dialog heraus
+   geoeffnet. Ohne hoeheres z-index liegt er dahinter und man bekommt den
+   Eindruck, die Pfeile im Album tun nichts. */
+#song-detail-modal { z-index: 1100; }
 .modal { background: var(--surface); width: 100%; max-width: 480px; padding: 2rem; max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
 .heatmap-wrap { width: 100%; overflow-x: auto; overflow-y: hidden; padding: 12px 6px; box-sizing: border-box; }
 .heatmap-grid { display: grid; grid-template-columns: min-content repeat(24, 1fr); gap: 4px; min-width: 680px; }

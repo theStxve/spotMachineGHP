@@ -19,7 +19,7 @@
 import { Frame, Column } from "../core/frame.js";
 
 
-// â”€â”€ numpy-Introsort (aquicksort_ + aheapsort_) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── numpy-Introsort (aquicksort_ + aheapsort_) ──────────────────────────────
 
 const SMALL_QUICKSORT = 15;
 
@@ -139,7 +139,7 @@ export function pandasArgsort(values, ascending) {
   return out;
 }
 
-// â”€â”€ Sortierhilfen auf Record-Arrays â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Sortierhilfen auf Record-Arrays ────────────────────────────────────────
 
 /** DataFrame.sort_values(by=feld, ascending=False).head(n) */
 export function sortRecordsUnstableDesc(records, field, n) {
@@ -174,7 +174,7 @@ export function sortRecordsLexDesc(records, fields, n) {
   return out.length > n ? out.slice(0, n) : out;
 }
 
-// â”€â”€ Frame-Erweiterung und Gruppierung â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Frame-Erweiterung und Gruppierung ──────────────────────────────────────
 
 /** Neue Ansicht mit einer zusaetzlichen Spalte (pandas: df["x"] = ...). */
 export function withColumn(frame, name, data, type) {

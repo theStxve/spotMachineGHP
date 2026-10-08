@@ -16,9 +16,18 @@ const STORE = "dataset";
 
 let frame = null;
 let frameAll = null;      // ungeprueft, wie es aus der Datei kam
+let framePreYears = null; // alle Filter AUSSER Jahresfilter - Zaehler fuer die Chips
 let quality = null;       // { outliers, dropped, includeOutliers }
 let meta = { years: [], total: 0, savedAt: null, fileNames: [] };
-let settings = { tz_mode: "utc", profile: "", tz: "" };
+let settings = { tz_mode: "utc", profile: "", tz: "", only_music: false, artist_blacklist: [], years: [] };
+let media = { music: 0, podcast: 0, audiobook: 0, hidden: 0, total: 0 };
+
+/** Schaltet den Medienfilter um (nur Musik bzw. alles). */
+export function setOnlyMusic(onlyMusic) {
+  settings.only_music = !!onlyMusic;
+  rebuildActiveFrame();
+  return { ...settings };
+}
 
 /** Umleitung der Kalender-Spalten, je nach Zeitzonen-Einstellung. */
 export function aliasesForTime(mode) {
@@ -31,21 +40,198 @@ export function aliasesForTime(mode) {
   return null;
 }
 
+/** Zählt Streams je Medientyp im ungefilterten Datensatz. */
+function countMedia(f) {
+  const out = { music: 0, podcast: 0, audiobook: 0, hidden: 0, total: f ? f.n : 0 };
+  if (!f || !f.has("media")) return out;
+  const d = f.col("media").data;
+  for (let i = 0; i < d.length; i++) {
+    if (d[i] === 1) out.podcast++;
+    else if (d[i] === 2) out.audiobook++;
+    else out.music++;
+  }
+  out.hidden = out.podcast + out.audiobook;
+  return out;
+}
+
+export function getMedia() {
+  return { ...media };
+}
+
+/** Gesperrte Artists als Kleinschreibungs-Set, Leerraum entfernt. */
+function blacklistKeys() {
+  const out = new Set();
+  for (const name of settings.artist_blacklist || []) {
+    const key = String(name).trim().toLowerCase();
+    if (key) out.add(key);
+  }
+  return out;
+}
+
+/** Entfernt die Streams der gesperrten Artists aus einer Ansicht. */
+function filterBlacklisted(f) {
+  const keys = blacklistKeys();
+  if (!keys.size) return f;
+  const artist = f.col("artist").data;
+  const rows = f.rows();
+  const keep = [];
+  for (let i = 0; i < rows.length; i++) {
+    const v = artist[rows[i]];
+    if (v !== null && v !== undefined && keys.has(String(v).trim().toLowerCase())) continue;
+    keep.push(rows[i]);
+  }
+  return f.sliceRows(keep);
+}
+
+/**
+ * Was sperrt tatsaechlich etwas. "matched" steht im Datensatz, "unknown"
+ * nicht - ein Tippfehler in der Schreibweise soll sichtbar werden.
+ */
+export function getBlacklist() {
+  const unique = [];
+  const seen = new Set();
+  for (const name of settings.artist_blacklist || []) {
+    const text = String(name).trim().slice(0, 80);
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(text);
+  }
+  const out = { names: unique, matched: [], unknown: [], artists_hidden: 0, streams_hidden: 0 };
+  if (!unique.length || !frameAll) {
+    out.unknown = unique.slice();
+    return out;
+  }
+  const artist = frameAll.col("artist").data;
+  const counts = new Map();
+  for (let i = 0; i < artist.length; i++) {
+    if (artist[i] === null || artist[i] === undefined) continue;
+    const key = String(artist[i]).trim().toLowerCase();
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  for (const name of unique) {
+    const n = counts.get(name.toLowerCase()) || 0;
+    if (n) {
+      out.matched.push(name);
+      out.streams_hidden += n;
+      out.artists_hidden += 1;
+    } else {
+      out.unknown.push(name);
+    }
+  }
+  return out;
+}
+
+/** Setzt die Blacklist (bereits bereinigt) und baut die Ansicht neu auf. */
+export function setArtistBlacklist(names) {
+  const seen = new Set();
+  const clean = [];
+  for (const n of Array.isArray(names) ? names : []) {
+    const text = String(n).trim().slice(0, 80);
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    clean.push(text);
+  }
+  settings.artist_blacklist = clean.slice(0, 200);
+  rebuildActiveFrame();
+  return { ...settings };
+}
+
+/**
+ * Globaler Jahresfilter. Eine leere Liste heisst "alle Jahre" - sonst wird
+ * auf genau diese Jahre eingeschraenkt.
+ */
+function yearKeys() {
+  const out = new Set();
+  for (const y of settings.years || []) {
+    const n = Number(y);
+    if (Number.isFinite(n)) out.add(n);
+  }
+  return out;
+}
+
+function filterYears(f) {
+  const keys = yearKeys();
+  if (!keys.size) return f;
+  return f.inSet("year", keys);
+}
+
+/** Welche Jahre im Spiel sind - inklusive Streamzahl je Jahr. */
+export function getYearScope() {
+  // Ohne Jahresfilter waere framePreYears die aktive Ansicht - die Chips
+  // brauchen aber ALLE Jahre inklusive der gerade abgewaehlten.
+  const src = framePreYears || frameAll;
+  const available = [];
+  const counts = {};
+  if (src && src.has("year")) {
+    const g = src.groupBy("year");
+    for (let i = 0; i < g.size; i++) {
+      const y = Number(g.keyValues[i]);
+      if (!Number.isFinite(y)) continue;
+      available.push(y);
+      counts[y] = g.counts()[i];
+    }
+    available.sort((a, b) => a - b);
+  }
+  const keys = yearKeys();
+  const selected = keys.size ? available.filter((y) => keys.has(y)) : available;
+  let streams = 0;
+  for (const y of selected) streams += counts[y] || 0;
+  return { available, counts, selected, all: !keys.size, streams };
+}
+
+/** Setzt die globalen Jahre (leere Liste = alle). */
+export function setYears(years) {
+  const picked = [];
+  const seen = new Set();
+  for (const y of Array.isArray(years) ? years : []) {
+    const n = Number(y);
+    if (Number.isFinite(n) && !seen.has(n)) {
+      seen.add(n);
+      picked.push(n);
+    }
+  }
+  settings.years = picked.slice(0, 40).sort((a, b) => a - b);
+  rebuildActiveFrame();
+  return { ...settings };
+}
+
+/**
+ * Baut die aktive Ansicht neu auf. Es gibt genau eine Quelle ungefilterter
+ * Daten (frameAll) und vier Schalter darauf: auffaellige Zeitstempel,
+ * Medienfilter, Artist-Blacklist und Jahresfilter. Deshalb kann nichts
+ * verloren gehen.
+ */
+function rebuildActiveFrame() {
+  if (!frameAll) return;
+  const aliases = aliasesForTime(settings.tz_mode);
+  frameAll = frameAll.withAliases(aliases);
+  let view = frameAll;
+  if (quality && quality.outliers.length && !quality.includeOutliers) {
+    view = dropOutlierYears(frameAll, quality.outliers).frame;
+  }
+  if (settings.only_music && frameAll.has("media")) {
+    view = view.eq("media", 0).sliceRows(view.rows());
+  }
+  view = filterBlacklisted(view);
+  view = view.withAliases(aliases);
+  framePreYears = view;
+  view = filterYears(view);
+  view = view.withAliases(aliases);
+  frame = view;
+  setFrame(frame, { savedAt: meta.savedAt, fileNames: meta.fileNames });
+}
+
 /**
  * Setzt den aktiven Kalender-Modus fuer den geladenen Datensatz. Die Spalten
  * liegen beide Varianten vor, deshalb geht das ohne erneuten Import.
  */
 export function applyTimeMode(mode) {
-  const aliases = aliasesForTime(mode);
-  if (!frameAll) return;
   // frameAll bleibt IMMER der ungefilterte Datensatz - nur die Spalten-
   // umleitung aendert sich. Andernfalls waeren die ausgeschlossenen Streams
   // endgueltig weg und nicht zurueckschaltbar.
-  frameAll = frameAll.withAliases(aliases);
-  frame = quality && quality.outliers.length && !quality.includeOutliers
-    ? dropOutlierYears(frameAll, quality.outliers).frame.withAliases(aliases)
-    : frameAll;
-  setFrame(frame, { savedAt: meta.savedAt, fileNames: meta.fileNames });
+  rebuildActiveFrame();
 }
 
 export function getSettings() {
@@ -61,6 +247,7 @@ export function setSettings(patch) {
   // mitgeschickt, weil Python unter Windows die Systemzeitzone nicht
   // zuverlaessig ermitteln kann.
   if (patch && typeof patch.tz === "string" && patch.tz) settings.tz = patch.tz.slice(0, 60);
+  if (patch && typeof patch.only_music === "boolean") settings.only_music = patch.only_music;
   return { ...settings };
 }
 
@@ -82,6 +269,9 @@ export function hasData() {
 
 export function setFrame(newFrame, info = {}) {
   frame = newFrame;
+  // meta gehoert zum Datensatz, nicht zur Zeilenauswahl. Sollte es fehlen,
+  // liefert frameUniqueTracks() stattdessen 0, statt die App zu kippen.
+  if (!frame.meta) frame.meta = { nSongs: 0, nArtists: 0, nAlbums: 0 };
   const years = getAvailableYearsSafe(frame);
   meta = {
     years,
@@ -105,6 +295,7 @@ function getAvailableYearsSafe(f) {
 export function clearFrame() {
   frame = null;
   frameAll = null;
+  framePreYears = null;
   quality = null;
   meta = { years: [], total: 0, savedAt: null, fileNames: [] };
   return clearCache();
@@ -120,9 +311,7 @@ export function setIncludeOutliers(include) {
   const want = !!include;
   if (want === !!quality.includeOutliers) return { changed: false, quality };
   quality = { ...quality, includeOutliers: want };
-  frame = (want ? frameAll : dropOutlierYears(frameAll, quality.outliers).frame)
-    .withAliases(aliasesForTime(settings.tz_mode));
-  setFrame(frame, { savedAt: meta.savedAt, fileNames: meta.fileNames });
+  rebuildActiveFrame();
   return { changed: true, quality };
 }
 
@@ -182,7 +371,7 @@ export async function saveCache(opts = {}) {
     }
     const payload = {
       cols, types, n: frame.n, dict: frame.meta,
-      at: Date.now(), fileNames: meta.fileNames, quality,
+      at: Date.now(), fileNames: meta.fileNames, quality, settings: { ...settings },
       profile: opts.profile || "",
     };
     await withStore("readwrite", (store) => store.put(payload, "current"));
@@ -235,19 +424,19 @@ export async function loadCache() {
     const restored = Frame.build(columns, payload.n);
     restored.meta = payload.dict || { nSongs: 0, nArtists: 0, nAlbums: 0 };
     frameAll = restored;
+    media = countMedia(restored);
     // Ein bereits gepruefter Datensatz bleibt geprueft - die verworfenen
     // Zeilen liegen nicht im Cache und sollen nicht wieder auftauchen.
     if (payload.quality && payload.quality.includeOutliers) {
       quality = { ...payload.quality, includeOutliers: true, dropped: 0 };
-      frame = restored;
     } else if (payload.quality) {
       quality = { ...payload.quality, includeOutliers: false };
-      frame = dropOutlierYears(restored, payload.quality.outliers).frame;
     } else {
       quality = null;
-      frame = restored;
     }
-    setFrame(frame, { savedAt: payload.at, fileNames: payload.fileNames || [] });
+    settings.only_music = !!(payload.settings && payload.settings.only_music);
+    settings.years = (payload.settings && Array.isArray(payload.settings.years)) ? payload.settings.years.slice() : [];
+    rebuildActiveFrame();
     return meta;
   } catch (e) {
     console.warn("Cache nicht lesbar:", e && e.message);
@@ -318,9 +507,10 @@ export async function loadFiles(files, onProgress = () => {}) {
 
   const built = finalizeFrame(builder);
   frameAll = built;
+  media = countMedia(built);
 
   // Plausibilitaetspruefung: vereinzelte Jahrgaenge mit falschen Zeitstempeln
-  // aus den Auswertungen heraushalten, aber sichtbar und umschaltbar.
+  // aus den Auswertungen herausaushalten, aber sichtbar und umschaltbar.
   const report = findOutlierYears(built);
   const cleaned = dropOutlierYears(built, report.outliers);
   quality = {
@@ -330,10 +520,11 @@ export async function loadFiles(files, onProgress = () => {}) {
     threshold: report.threshold,
     earliest: earliestYear(built),
   };
-  // Aktiven Kalender-Modus anwenden (UTC ist Vorgabe)
-  applyTimeMode(settings.tz_mode);
-  return { meta, quality, fromZip };
+  // Aktiven Kalender- und Medienmodus anwenden (UTC und "alles" sind Vorgabe)
+  rebuildActiveFrame();
+  return { meta, quality, media, fromZip };
 }
+
 
 
 /** Fallback fuer ZIPs, deren Dateinamen nicht dem Spotify-Muster entsprechen. */

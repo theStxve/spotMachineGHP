@@ -234,10 +234,12 @@ export class Frame {
 
   /** Neue Ansicht mit gefilterten Zeilen - es wird nichts kopiert. */
   take(indices) {
-    return new Frame(this.cols, Uint32Array.from(indices), this.aliases);
+    const view = new Frame(this.cols, Uint32Array.from(indices), this.aliases);
+    if (this.meta) view.meta = this.meta;
+    return view;
   }
 
-  // â”€â”€ Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Filter ────────────────────────────────────────────────────────────────
   eq(name, value) {
     const d = this.col(name).data;
     const r = this.rows();
@@ -313,10 +315,12 @@ export class Frame {
   concat(other) {
     const merged = { ...this.cols };
     for (const [k, v] of Object.entries(other.cols)) if (!(k in merged)) merged[k] = v;
-    return new Frame(merged, null);
+    const view = new Frame(merged, null);
+    if (this.meta) view.meta = this.meta;
+    return view;
   }
 
-  // â”€â”€ Sortieren â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Sortieren ─────────────────────────────────────────────────────────────
   /**
    * @param {Array<[string, boolean]>} specs  [Spalte, aufsteigend?]
    * @returns {Uint32Array} Zeilenindizes, stabil sortiert (wie pandas head())
@@ -368,7 +372,7 @@ export class Frame {
     return view;
   }
 
-  // â”€â”€ Gruppen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Gruppen ───────────────────────────────────────────────────────────────
   /**
    * @param {string|Array<string>} names
    * @param {Object} opts  {sorted: true|false, codeCol: "song_id_code"}
@@ -411,7 +415,7 @@ export class Frame {
     return new GroupTable(this, codes, rows, nGroups, null, null);
   }
 
-  // â”€â”€ Ausgabe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Ausgabe ───────────────────────────────────────────────────────────────
   /** Python to_dict("records") - nur fuer kleine Ergebnis-Mengen. */
   records(cols = null) {
     const names = cols || Object.keys(this.cols);

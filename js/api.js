@@ -9,8 +9,10 @@
 import {
   getFrame, getMeta, hasData, clearFrame, saveCache, loadCache, peekCache, clearCache,
   loadFiles, setIncludeOutliers, getQuality, getSettings, setSettings, applyTimeMode,
+  setOnlyMusic, getMedia, setArtistBlacklist, getBlacklist, setYears, getYearScope,
 } from "./core/store.js";
 import { get_available_years, get_all_artists, recommend } from "./analytics/core.js";
+import { get_top_songs } from "./analytics/topsongs.js";
 import {
   get_heatmap_data, get_skip_analysis, get_discover_tracks, get_compare_data,
   get_artist_data, get_monthly_stats, get_session_stats, get_platform_stats,
@@ -54,13 +56,13 @@ export async function handleRequest(method, url, body, query) {
   const q = (name, fallback = null) => (query && query.has(name) ? query.get(name) : fallback);
   const path = url.split("?")[0];
 
-  // â”€â”€ Upload / Import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Upload / Import ───────────────────────────────────────────────────────
   if (path === "/upload" && method === "POST") {
     const files = (body && body.getAll ? body.getAll("files") : []).filter(
       (f) => f && f.name && f.name !== ""
     );
     if (!files.length) throw new RouteError("Keine Datei hochgeladen.");
-    const { meta, quality } = await loadFiles(files, onUploadProgress);
+    const { meta, quality, media: mediaInfo } = await loadFiles(files, onUploadProgress);
     const saved = await saveCache({ profile: (getSettings().profile || "").trim() });
     return {
       success: true,
@@ -68,6 +70,9 @@ export async function handleRequest(method, url, body, query) {
       total_streams: meta.total,
       unique_tracks: meta.uniqueTracks,
       quality: qualitySummary(quality),
+      media: mediaInfo,
+      blacklist: getBlacklist(),
+      year_scope: getYearScope(),
       cache_saved: saved.ok,
       cache_error: saved.ok ? null : saved.reason,
     };
@@ -96,16 +101,30 @@ export async function handleRequest(method, url, body, query) {
 
   if (path === "/api/settings" && method === "POST") {
     const previous = getSettings();
+    const blBefore = JSON.stringify(previous.artist_blacklist || []);
+    const yrBefore = JSON.stringify(previous.years || []);
+    if (Array.isArray(body && body.artist_blacklist)) setArtistBlacklist(body.artist_blacklist);
+    if (Array.isArray(body && body.years)) setYears(body.years);
     const next = setSettings(body || {});
+    const blAfter = JSON.stringify(next.artist_blacklist || []);
+    const yrAfter = JSON.stringify(next.years || []);
+    const tzChanged = body && body.tz_mode !== undefined && previous.tz_mode !== next.tz_mode;
+    const mediaChanged = body && body.only_music !== undefined && previous.only_music !== next.only_music;
+    const blChanged = blBefore !== blAfter;
+    const yrChanged = yrBefore !== yrAfter;
+    if (mediaChanged || blChanged || yrChanged) setOnlyMusic(next.only_music);
+    else if (tzChanged) applyTimeMode(next.tz_mode);
     let cache = null;
-    if (body && body.tz_mode !== undefined && previous.tz_mode !== next.tz_mode) {
-      applyTimeMode(next.tz_mode);
-      cache = await saveCache({ profile: next.profile });
-    }
+    if (tzChanged || mediaChanged || blChanged || yrChanged) cache = await saveCache({ profile: next.profile });
+    const m = getMeta();
     return {
       success: true,
       settings: next,
-      total_streams: hasData() ? getMeta().total : 0,
+      total_streams: m.total,
+      years: m.years,
+      media: getMedia(),
+      blacklist: getBlacklist(),
+      year_scope: getYearScope(),
       cache_saved: cache ? cache.ok : null,
       cache_error: cache && !cache.ok ? cache.reason : null,
     };
@@ -121,6 +140,7 @@ export async function handleRequest(method, url, body, query) {
       total_streams: m.total,
       years: m.years,
       quality: qualitySummary(quality),
+      year_scope: getYearScope(),
     };
   }
 
@@ -139,6 +159,9 @@ export async function handleRequest(method, url, body, query) {
       years: getMeta().years,
       latest_stream: get_latest_stream_info(df),
       quality: qualitySummary(getQuality()),
+      media: getMedia(),
+      blacklist: getBlacklist(),
+      year_scope: getYearScope(),
     };
   }
 
@@ -146,7 +169,7 @@ export async function handleRequest(method, url, body, query) {
   // Endpunkte existieren nur, damit das Frontend keinen Fehler sieht.
   if (path === "/api/heartbeat" || path === "/api/disconnect") return { ok: true };
 
-  // â”€â”€ Empfehlungen & Grunddaten â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Empfehlungen & Grunddaten ─────────────────────────────────────────────
   if (path === "/recommend" && method === "POST") {
     const df = needFrame();
     const year = int(body.year, 2023);
@@ -165,11 +188,15 @@ export async function handleRequest(method, url, body, query) {
   if (path === "/api/years") return get_available_years(needFrame());
   if (path === "/api/artists") return get_all_artists(needFrame());
 
+  if (path === "/api/top_songs") {
+    return get_top_songs(needFrame(), intOrNull(q("year")), q("sort", "plays"), int(q("limit"), 50));
+  }
+
   if (path === "/api/heatmap") return get_heatmap_data(needFrame(), intOrNull(q("year")));
   if (path === "/api/skips") {
     return get_skip_analysis(needFrame(), intOrNull(q("year")), int(q("min_plays"), 5), int(q("top_n"), 30));
   }
-  if (path === "/api/discover") return get_discover_tracks(needFrame(), int(q("year"), 2023), int(q("top_n"), 20));
+  if (path === "/api/discover") return get_discover_tracks(needFrame(), intOrNull(q("year")), int(q("top_n"), 20));
   if (path === "/api/compare" && method === "POST") {
     return get_compare_data(needFrame(), int(body.year1, 2023), int(body.year2, 2023));
   }
@@ -205,7 +232,7 @@ export async function handleRequest(method, url, body, query) {
     return get_album_detail(needFrame(), body.album || "", body.artist || "");
   }
 
-  // â”€â”€ Last.fm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Last.fm ───────────────────────────────────────────────────────────────
   if (path === "/api/lastfm/test" && method === "POST") {
     return { valid: await lastfm.testApiKey(keyOf(body)) };
   }
@@ -279,7 +306,7 @@ export async function handleRequest(method, url, body, query) {
     };
   }
 
-  // â”€â”€ Playlist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Playlist ──────────────────────────────────────────────────────────────
   if (path === "/api/playlist/generate" && method === "POST") {
     const df = getFrame();
     return generate_playlist(df, {

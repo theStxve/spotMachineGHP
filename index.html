@@ -80,6 +80,8 @@
     <nav class="tabs hidden" id="tab-nav">
       <button class="tab-btn active" data-tab="recommend"><i data-lucide="sparkles"></i> Empfehlungen</button>
 
+      <button class="tab-btn" data-tab="topsongs"><i data-lucide="trophy"></i> Top Songs</button>
+
       <button class="tab-btn" data-tab="playlist"><i data-lucide="list-music"></i> Playlist-Builder</button>
       <button class="tab-btn" data-tab="compare"><i data-lucide="git-compare-arrows"></i> Vergleich</button>
       <button class="tab-btn" data-tab="heatmap"><i data-lucide="grid-3x3"></i> Hörzeit</button>
@@ -95,13 +97,18 @@
       <button class="tab-btn" data-tab="behavior"><i data-lucide="activity"></i> Hörverhalten &amp; Loops</button>
     </nav>
 
+    <!-- Globaler Jahresfilter: gilt für alle Auswertungen -->
+    <div id="global-year-bar" class="hidden" style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-bottom:1rem; padding:0.65rem 0.85rem; background:var(--surface2); border:1px solid var(--border); border-radius:10px;">
+      <span style="font-size:0.78rem; color:var(--muted); display:flex; align-items:center; gap:0.35rem;">
+        <i data-lucide="calendar-range" style="width:13px;height:13px;"></i> Jahre
+      </span>
+      <div id="year-chips" style="display:flex; gap:0.35rem; flex-wrap:wrap; flex:1;"></div>
+      <span id="year-bar-hint" style="font-size:0.74rem; color:var(--muted);"></span>
+    </div>
+
     <!-- TAB: Recommend -->
     <div class="tab-panel hidden card" id="panel-recommend">
       <div class="form-row">
-        <div class="form-group">
-          <label>Ziel-Jahr</label>
-          <select id="rec-year"></select>
-        </div>
         <div class="form-group">
           <label>Anzahl Songs</label>
           <input type="number" id="rec-topn" value="20" min="5" />
@@ -130,6 +137,51 @@
       </div>
     </div>
 
+    <!-- TAB: Top Songs -->
+    <div class="tab-panel hidden card" id="panel-topsongs">
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group">
+          <label>Sortieren nach</label>
+          <select id="tops-sort">
+            <option value="plays">Anzahl Plays</option>
+            <option value="minutes">Hörminuten gesamt</option>
+            <option value="engagement">Engagement-Score</option>
+            <option value="avg">Ø Minuten pro Play</option>
+            <option value="completion">Zu Ende gehört</option>
+            <option value="skip">Übersprungen</option>
+            <option value="artist">Artist (A–Z)</option>
+            <option value="track">Titel (A–Z)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Anzahl</label>
+          <select id="tops-limit">
+            <option value="25">Top 25</option>
+            <option value="50" selected>Top 50</option>
+            <option value="100">Top 100</option>
+            <option value="250">Top 250</option>
+            <option value="0">Alle</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:2;">
+          <label>Filter</label>
+          <input type="text" id="tops-filter" placeholder="Song, Artist oder Album filtern..." />
+        </div>
+      </div>
+      <button id="tops-btn" class="btn btn-primary"><i data-lucide="trophy"></i> Bestenliste laden</button>
+
+      <div id="tops-results" class="hidden" style="margin-top:1.25rem;">
+        <div id="tops-stat-cards" class="stat-cards-grid" style="margin-bottom:1.25rem;"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem; flex-wrap:wrap; gap:0.5rem;">
+          <div id="tops-summary" style="font-size:0.85rem; color:var(--muted);"></div>
+          <button id="tops-csv-btn" class="btn btn-ghost" style="font-size:0.8rem; padding:0.4rem 0.7rem;">
+            <i data-lucide="clipboard-copy"></i> Als CSV kopieren
+          </button>
+        </div>
+        <div id="tops-list"></div>
+      </div>
+    </div>
+
     <!-- TAB: Compare -->
     <div class="tab-panel hidden card" id="panel-compare">
       <div class="form-row">
@@ -149,10 +201,6 @@
     <!-- TAB: Heatmap -->
     <div class="tab-panel hidden card" id="panel-heatmap">
       <div class="form-row">
-        <div class="form-group">
-          <label>Jahr</label>
-          <select id="heat-year"><option value="all">Alle</option></select>
-        </div>
         <div class="form-group">
           <label>Ansichts-Modus</label>
           <select id="heat-view-mode">
@@ -262,10 +310,6 @@
     <div class="tab-panel hidden card" id="panel-skips">
       <div class="form-row" style="align-items:flex-end;">
         <div class="form-group">
-          <label>Jahr</label>
-          <select id="skip-year"><option value="all">Alle</option></select>
-        </div>
-        <div class="form-group">
           <label>Min. Plays</label>
           <input type="number" id="skip-min" value="5" min="1" />
         </div>
@@ -344,10 +388,6 @@
     <!-- TAB: Discover -->
     <div class="tab-panel hidden card" id="panel-discover">
       <div class="form-row">
-        <div class="form-group">
-          <label>Ziel-Jahr für Entdeckungs-Radar</label>
-          <select id="disc-year"></select>
-        </div>
       </div>
       <button id="disc-btn" class="btn btn-primary"><i data-lucide="compass"></i> Entdeckungs-Analyse starten</button>
 
@@ -397,10 +437,6 @@
     <!-- TAB: Monthly -->
     <div class="tab-panel hidden card" id="panel-monthly">
       <div class="form-row">
-        <div class="form-group">
-          <label>Jahr</label>
-          <select id="monthly-year"><option value="all">Alle</option></select>
-        </div>
       </div>
 
       <div id="monthly-results" class="hidden">
@@ -439,10 +475,6 @@
     <!-- TAB: Sessions -->
     <div class="tab-panel hidden card" id="panel-sessions">
       <div class="form-row">
-        <div class="form-group">
-          <label>Jahr</label>
-          <select id="sessions-year"><option value="all">Alle</option></select>
-        </div>
       </div>
 
       <div id="sessions-results" class="hidden">
@@ -485,10 +517,6 @@
     <!-- TAB: Platforms -->
     <div class="tab-panel hidden card" id="panel-platforms">
       <div class="form-row">
-        <div class="form-group">
-          <label>Jahr</label>
-          <select id="platforms-year"><option value="all">Alle</option></select>
-        </div>
       </div>
       <div class="artist-chart-wrap" style="height: 300px; margin: 1rem 0;">
         <canvas id="platforms-chart"></canvas>
@@ -500,10 +528,6 @@
     <!-- TAB: Behavior & Loops -->
     <div class="tab-panel hidden card" id="panel-behavior">
       <div class="form-row">
-        <div class="form-group">
-          <label>Jahr</label>
-          <select id="behavior-year"><option value="all">Alle</option></select>
-        </div>
       </div>
       <button id="behavior-btn" class="btn btn-primary"><i data-lucide="activity"></i> Analysieren</button>
 
@@ -544,12 +568,9 @@
     <!-- TAB: Albums -->
     <div class="tab-panel hidden card" id="panel-albums">
       <div class="form-row" style="align-items:flex-end; gap:0.75rem; flex-wrap:wrap;">
-        <div class="form-group" style="flex:1; min-width:120px;">
-          <label>Jahr</label>
-          <select id="albums-year"><option value="all">Alle Jahre</option></select>
-        </div>
         <div class="form-group" style="flex:2; min-width:180px;">
           <label>Suchen / Filtern</label>
+
           <input type="text" id="albums-filter" placeholder="Album oder Artist..." autocomplete="off" />
         </div>
         <div class="form-group" style="flex:1; min-width:130px;">
@@ -892,6 +913,42 @@
         <div class="toggle-row">
           <label>Globale Track-Stats (Listeners, Playcount)</label>
           <input type="checkbox" id="toggle-track-stats" />
+        </div>
+      </div>
+
+      <!-- Artist-Blacklist -->
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:0.9rem; margin-top:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+          <strong style="font-size:0.9rem;"><i data-lucide="user-x" style="width:14px;height:14px;color:#e5534b;"></i> Gesperrte Artists</strong>
+          <span id="blacklist-hint" style="font-size:0.72rem; color:var(--muted);"></span>
+        </div>
+        <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.6rem;">
+          Diese Artists fliegen aus <strong>allen</strong> Auswertungen heraus — Top Songs,
+          Heatmap, Empfehlungen, Statistiken, Playlist-Builder. Name wird ohne Groß-/Kleinschreibung
+          verglichen; der komplette Artist zählt, nicht nur ein Teil des Namens.
+        </p>
+        <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem;">
+          <input type="text" id="blacklist-input" placeholder="Artist-Name, Enter zum Hinzufügen..." style="flex:1;" />
+          <button id="blacklist-add-btn" class="btn btn-outline" style="flex-shrink:0; padding:0.5rem 0.8rem;">
+            <i data-lucide="plus"></i>
+          </button>
+        </div>
+        <div id="blacklist-chips" style="display:flex; flex-wrap:wrap; gap:0.35rem;"></div>
+      </div>
+
+      <!-- Medientyp: Podcasts und Hörbücher ausblenden -->
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:0.9rem; margin-top:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+          <strong style="font-size:0.9rem;"><i data-lucide="mic-off" style="width:14px;height:14px;color:var(--green);"></i> Medientyp</strong>
+          <span id="media-hint" style="font-size:0.72rem; color:var(--muted);"></span>
+        </div>
+        <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.6rem;">
+          Spoti fys Export mischt Musik, Podcast-Episoden und Hörbücher in denselben
+          Dateien. Mit dem Schalter fliegen Podcasts und Hörbücher aus allen Auswertungen.
+        </p>
+        <div class="toggle-row" style="padding:0;">
+          <label>Nur Musik auswerten</label>
+          <input type="checkbox" id="toggle-only-music" />
         </div>
       </div>
 

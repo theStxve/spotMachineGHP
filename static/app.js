@@ -52,10 +52,13 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     
     // Auto-fetch logic
     if (state.activeTab === 'artists' && state.artists.length === 0) loadArtists();
-    if (state.activeTab === 'monthly') document.getElementById('monthly-year').dispatchEvent(new Event('change'));
-    if (state.activeTab === 'sessions') document.getElementById('sessions-year').dispatchEvent(new Event('change'));
-    if (state.activeTab === 'platforms') document.getElementById('platforms-year').dispatchEvent(new Event('change'));
-    if (state.activeTab === 'albums') document.getElementById('albums-year').dispatchEvent(new Event('change'));
+    // Der Top-Songs-Tab lädt beim ersten Öffnen selbst - das ist die
+    // einfachste Liste und soll ohne Klick da stehen.
+    if (state.activeTab === 'topsongs' && !state.topSongs) loadTopSongs();
+    if (state.activeTab === 'monthly') loadMonthly();
+    if (state.activeTab === 'sessions') loadSessions();
+    if (state.activeTab === 'platforms') loadPlatforms();
+    if (state.activeTab === 'albums') loadAlbums();
     if (state.activeTab === 'discover') loadDiscoverTimeline();
     if (state.activeTab === 'behavior') document.getElementById('behavior-btn').click();
   });
@@ -68,20 +71,138 @@ async function loadArtists() {
     document.getElementById("artists-list").innerHTML = data.map(a => `<option value="${a}">`).join("");
 }
 
+/**
+ * Die Jahres-Auswahl liegt jetzt global ueber allen Tabs. `state.years` sind
+ * die Jahre im aktuellen Datensatz, `state.yearScope` beschreibt die globale
+ * Auswahl. Die Vergleichs-Dropdowns bekommen nur noch die sichtbaren Jahre.
+ */
 function updateYearSelects() {
-    const opts = state.years.map(y => `<option value="${y}">${y}</option>`).join("");
-    const optsAll = `<option value="all">Alle</option>` + opts;
-    document.getElementById("rec-year").innerHTML = opts;
-    document.getElementById("comp-y1").innerHTML = opts;
-    document.getElementById("comp-y2").innerHTML = opts;
-    document.getElementById("heat-year").innerHTML = optsAll;
-    document.getElementById("skip-year").innerHTML = optsAll;
-    document.getElementById("disc-year").innerHTML = opts;
-    document.getElementById("monthly-year").innerHTML = optsAll;
-    document.getElementById("sessions-year").innerHTML = optsAll;
-    document.getElementById("platforms-year").innerHTML = optsAll;
-    document.getElementById("albums-year").innerHTML = optsAll;
-    if (document.getElementById("behavior-year")) document.getElementById("behavior-year").innerHTML = optsAll;
+    const scope = state.yearScope || { selected: state.years, all: true, counts: {} };
+    const pool = scope.all ? state.years : scope.selected;
+    const opts = pool.map(y => `<option value="${y}">${y}</option>`).join("");
+    const y1 = document.getElementById("comp-y1");
+    const y2 = document.getElementById("comp-y2");
+    const prev1 = y1 ? y1.value : null;
+    const prev2 = y2 ? y2.value : null;
+    if (y1) y1.innerHTML = opts;
+    if (y2) y2.innerHTML = opts;
+    // Auswahl nur uebernehmen, wenn das Jahr noch im Pool liegt.
+    if (y1 && pool.map(String).includes(prev1)) y1.value = prev1;
+    if (y2 && pool.map(String).includes(prev2)) y2.value = prev2;
+    renderYearChips();
+    _initPlaylistYears();
+}
+
+/**
+ * Zieljahr fuer die Empfehlungen: das juengste Jahr der globalen Auswahl.
+ * Ohne Auswahl das juengste Jahr im Datensatz.
+ */
+function globalTargetYear() {
+    const pool = state.yearScope && !state.yearScope.all && state.yearScope.selected.length
+        ? state.yearScope.selected
+        : state.years;
+    const usable = (pool || []).filter(y => Number(y) <= new Date().getFullYear());
+    return usable.length ? usable[usable.length - 1] : (pool && pool.length ? pool[pool.length - 1] : new Date().getFullYear());
+}
+
+/** Baut die globale Jahresleiste: Chips fuer alle Jahre plus "Alle". */
+function renderYearChips() {
+    const bar = document.getElementById("global-year-bar");
+    const box = document.getElementById("year-chips");
+    const hint = document.getElementById("year-bar-hint");
+    if (!bar || !box) return;
+    if (!state.years.length && !(state.yearScope && state.yearScope.available && state.yearScope.available.length)) {
+        bar.style.display = "none";
+        return;
+    }
+    bar.style.display = "flex";
+
+    const scope = state.yearScope || { selected: state.years, all: true, counts: {}, streams: state.totalStreams || 0 };
+    // Die Chips kommen aus year_scope.available - auch wenn gerade gefiltert
+    // wird, muessen alle wahlbaren Jahre sichtbar bleiben.
+    const available = (scope.available && scope.available.length) ? scope.available : state.years;
+    const selected = new Set(scope.all ? available : scope.selected);
+    const fmt = n => (n || 0).toLocaleString("de-DE");
+
+    let html = `<button class="chip" data-year="__all" style="${scope.all ? "border-color:var(--green);color:var(--green);background:rgba(29,185,84,0.12);" : ""}">Alle</button>`;
+    for (const y of available) {
+        const on = !scope.all && selected.has(y);
+        html += `<button class="chip" data-year="${y}" style="${on ? "border-color:var(--green);color:var(--green);background:rgba(29,185,84,0.12);" : ""}">${y}<span style="opacity:0.6;margin-left:0.3rem;font-size:0.72rem;">${fmt(scope.counts && scope.counts[y])}</span></button>`;
+    }
+    box.innerHTML = html;
+
+    box.querySelectorAll(".chip").forEach(btn => {
+        btn.addEventListener("click", () => toggleYear(btn.dataset.year));
+    });
+    if (hint) {
+        hint.textContent = scope.all
+            ? `${available.length} Jahre · ${fmt(state.totalStreams)} Streams`
+            : `${selected.size} von ${available.length} Jahren · ${fmt(scope.streams)} Streams`;
+    }
+}
+
+/** Klick auf einen Jahres-Chip: Solo, dazu oder wieder abwaehlen. */
+function toggleYear(year) {
+    const scope = state.yearScope || { selected: state.years, all: true };
+    const available = (scope.available && scope.available.length) ? scope.available : state.years;
+    let next;
+    if (year === "__all") {
+        next = [];
+    } else {
+        const current = scope.all ? available : scope.selected;
+        const picked = new Set(current);
+        if (picked.has(Number(year))) picked.delete(Number(year));
+        else picked.add(Number(year));
+        next = Array.from(picked).sort((a, b) => a - b);
+        // Alle Jahre wieder angewaehlt ergibt wieder "alle".
+        if (next.length === available.length) next = [];
+    }
+    applyGlobalYears(next);
+}
+
+/** Setzt die globalen Jahre und laedt die betroffenen Tabs neu. */
+async function applyGlobalYears(years) {
+    state.yearScope = { ...(state.yearScope || {}), selected: years.length ? years : state.years, all: !years.length, pending: true };
+    renderYearChips();
+    showLoader("Jahre werden angewendet...");
+    const res = await apiCall("/api/settings", "POST", { years });
+    hideLoader();
+    if (res && res.error) {
+        state.yearScope = { ...state.yearScope, pending: false };
+        showToast("Jahre konnten nicht gesetzt werden", "error");
+        renderYearChips();
+        return;
+    }
+    if (res && res.total_streams !== undefined) {
+        state.totalStreams = res.total_streams;
+        state.years = res.years || state.years;
+        state.yearScope = res.year_scope || state.yearScope;
+        state.yearScope.pending = false;
+    }
+    updateYearSelects();
+    refreshActiveTab();
+    showToast(state.yearScope.all ? "Alle Jahre aktiv" : `${state.yearScope.selected.length} Jahre aktiv`);
+}
+
+/** Laedt den gerade sichtbaren Tab neu, weil sich der Datenbestand geaendert hat. */
+function refreshActiveTab() {
+    const tab = state.activeTab;
+    const reload = {
+        overview: loadArtists,
+        topsongs: loadTopSongs,
+        heatmap: loadHeatmap,
+        skips: loadSkips,
+        discover: loadDiscoverTimeline,
+        monthly: loadMonthly,
+        sessions: loadSessions,
+        platforms: loadPlatforms,
+        albums: loadAlbums,
+    };
+    const fn = reload[tab];
+    if (typeof fn === "function") fn();
+    else if (tab === "recommend") loadRecForm();
+    else if (tab === "compare") loadCompare();
+    else if (tab === "behavior") document.getElementById("behavior-btn").click();
 }
 
 // ── MODULE: Upload ──
@@ -165,6 +286,8 @@ uploadBtn.addEventListener("click", async () => {
         hideLoader();
         if(data.error) return alert(data.error);
         state.years = data.years;
+        state.totalStreams = data.total_streams;
+        if(data.year_scope) state.yearScope = data.year_scope;
         state.dataLoaded = true;
         updateYearSelects();
         document.getElementById("upload-section").classList.add("hidden");
@@ -172,6 +295,8 @@ uploadBtn.addEventListener("click", async () => {
         document.getElementById("panel-recommend").classList.remove("hidden");
         updateHeaderSyncBtn();
         applyQuality(data.quality);
+        if(data.media) applyMediaInfo(data.media);
+        if(data.blacklist) renderBlacklist(data.blacklist);
         lucide.createIcons();
     } catch(err) {
         hideLoader();
@@ -223,7 +348,7 @@ document.getElementById("cache-wipe-btn")?.addEventListener("click", async () =>
     showToast(res.success ? "Zwischenspeicherung gelöscht" : "Löschen fehlgeschlagen");
 });
 
-// ── MODULE: Einstellungen (Zeitzone, Profilname) ──
+// ── MODULE: Einstellungen (Zeitzone, Medienfilter, Profilname) ──
 async function loadSettings() {
     const s = await apiCall("/api/settings");
     state.settingsTz = s.tz_mode;
@@ -231,8 +356,97 @@ async function loadSettings() {
     if(tz) tz.checked = s.tz_mode === "local";
     const prof = document.getElementById("profile-name");
     if(prof) prof.value = s.profile || "";
+    const om = document.getElementById("toggle-only-music");
+    if(om) om.checked = !!s.only_music;
+    applyMediaInfo(s.media);
+    renderBlacklist(s.blacklist || { names: [], matched: [], unknown: [] });
     updateTzHint();
 }
+
+function applyMediaInfo(media) {
+    const hint = document.getElementById("media-hint");
+    if(!hint || !media) return;
+    if(!media.hidden) {
+        hint.textContent = "nur Musik in den Daten";
+        return;
+    }
+    const pct = media.total ? (media.hidden / media.total * 100) : 0;
+    hint.textContent = `${media.podcast} Podcasts, ${media.audiobook} Hörbücher (${pct.toFixed(1)} %)`;
+}
+
+// ── MODULE: Artist-Blacklist ──
+// Gesperrte Artists fliegen aus allen Auswertungen, nicht nur aus einem Tab.
+function renderBlacklist(info) {
+    state.blacklist = info || state.blacklist;
+    const bl = state.blacklist;
+    const box = document.getElementById("blacklist-chips");
+    const hint = document.getElementById("blacklist-hint");
+    if(!box) return;
+    if(!bl || !bl.names || !bl.names.length) {
+        box.innerHTML = '<span style="font-size:0.78rem;color:var(--muted);">Keine Artists gesperrt.</span>';
+        if(hint) hint.textContent = "";
+        return;
+    }
+    box.innerHTML = bl.names.map((name, i) => {
+        const cls = bl.unknown.includes(name) ? "unknown" : "";
+        const title = bl.unknown.includes(name) ? "kommt in deinen Daten nicht vor" : "gesperrt";
+        return `<span class="tag-pill ${cls}" title="${title}"
+            style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.25rem 0.5rem;font-size:0.78rem;">
+            ${name.replace(/[<>&]/g,'')}
+            <i data-lucide="x" data-bl-remove="${i}" style="width:11px;height:11px;cursor:pointer;"></i>
+        </span>`;
+    }).join("");
+    box.querySelectorAll("[data-bl-remove]").forEach(el => {
+        el.addEventListener("click", () => removeFromBlacklist(Number(el.dataset.blRemove)));
+    });
+    if(hint) {
+        const parts = [];
+        if(bl.artists_hidden) parts.push(`${bl.artists_hidden} Artists / ${bl.streams_hidden.toLocaleString()} Streams raus`);
+        if(bl.unknown.length) parts.push(`${bl.unknown.length} ohne Treffer`);
+        hint.textContent = parts.join(" · ");
+    }
+    lucide.createIcons();
+}
+
+async function addToBlacklist(name) {
+    const clean = String(name || "").trim();
+    if(!clean) return;
+    const current = ((state.blacklist && state.blacklist.names) || []).slice();
+    current.push(clean);
+    await applyBlacklist(current, `${clean} gesperrt`);
+}
+
+async function removeFromBlacklist(index) {
+    const current = (((state.blacklist && state.blacklist.names) || []).slice());
+    const removed = current.splice(index, 1)[0];
+    await applyBlacklist(current, `${removed} wieder freigegeben`);
+}
+
+async function applyBlacklist(names, toastMsg) {
+    showLoader("Wende Blacklist an...");
+    try {
+        const res = await saveSettings({ artist_blacklist: names });
+        hideLoader();
+        renderBlacklist(res.blacklist);
+        refreshTabsAfterFilter();
+        if(toastMsg) showToast(`${toastMsg} — ${res.total_streams.toLocaleString()} Streams`);
+    } catch(e) {
+        hideLoader();
+        alert("Speichern fehlgeschlagen: " + e.message);
+    }
+}
+
+document.getElementById("blacklist-add-btn")?.addEventListener("click", () => {
+    const input = document.getElementById("blacklist-input");
+    addToBlacklist(input.value).then(() => { if(input) input.value = ""; });
+});
+
+document.getElementById("blacklist-input")?.addEventListener("keydown", (e) => {
+    if(e.key !== "Enter") return;
+    e.preventDefault();
+    const input = e.target;
+    addToBlacklist(input.value).then(() => { input.value = ""; });
+});
 
 function updateTzHint() {
     const hint = document.getElementById("tz-hint");
@@ -243,7 +457,7 @@ function updateTzHint() {
     hint.textContent = local ? (zone || "lokal") : "UTC";
 }
 
-async function saveSettings(patch) {
+async function saveSettings(patch, onDone) {
     // Die IANA-Zone des Browsers mitschicken. Python kann die Systemzeitzone
     // unter Windows nicht zuverlaesig ermitteln, der Browser aber schon.
     const zone = (window.Intl && Intl.DateTimeFormat)
@@ -253,20 +467,49 @@ async function saveSettings(patch) {
         state.settingsTz = res.settings.tz_mode;
         updateTzHint();
     }
+    if(res.media) applyMediaInfo(res.media);
+    if(res.blacklist) renderBlacklist(res.blacklist);
+    if(res.total_streams !== undefined) state.totalStreams = res.total_streams;
+    if(res.year_scope) state.yearScope = res.year_scope;
+    if(res.years && res.years.length) {
+        state.years = res.years;
+        updateYearSelects();
+    }
     if(res.cache_saved === false) {
         showToast("Hinweis: Zwischenspeicherung nicht möglich (Speicherplatz)");
     }
+    if(typeof onDone === "function") onDone(res);
     return res;
 }
+
+/** Nach einem Filterwechsel: offene Tabs neu laden, damit die Zahlen passen. */
+function refreshTabsAfterFilter() {
+    state.tabCache = {};
+    document.querySelector(`.tab-btn[data-tab="${state.activeTab}"]`)?.click();
+}
+
+document.getElementById("toggle-only-music")?.addEventListener("change", async (e) => {
+    showLoader(e.target.checked ? "Blende Podcasts und Hörbücher aus..." : "Ganzes Dataset...");
+    try {
+        const res = await saveSettings({ only_music: e.target.checked });
+        hideLoader();
+        refreshTabsAfterFilter();
+        const m = res.media || {};
+        showToast(e.target.checked
+            ? `Nur Musik — ${(m.music || 0).toLocaleString()} Streams`
+            : `Alle Medien — ${(m.total || 0).toLocaleString()} Streams`);
+    } catch(err) {
+        hideLoader();
+        alert("Umschalten fehlgeschlagen: " + err.message);
+    }
+});
 
 document.getElementById("toggle-tz-local")?.addEventListener("change", async (e) => {
     showLoader("Wende Zeitzone an...");
     try {
         await saveSettings({ tz_mode: e.target.checked ? "local" : "utc" });
         hideLoader();
-        // Tabs neu laden, damit Heatmap und Tagesverläufe stimmen
-        state.tabCache = {};
-        document.querySelector(`.tab-btn[data-tab="${state.activeTab}"]`)?.click();
+        refreshTabsAfterFilter();
         showToast(e.target.checked
             ? "Auswertung läuft jetzt in lokaler Zeit"
             : "Auswertung läuft wieder in UTC");
@@ -282,6 +525,134 @@ document.getElementById("profile-name")?.addEventListener("change", async (e) =>
 });
 
 document.getElementById("settings-open")?.addEventListener("click", loadSettings);
+
+// ── MODULE: Top Songs ──
+// Die reine Bestenliste. "Empfehlungen" mischt Songs des Zieljahres mit
+// Treffern aus anderen Jahren - das ist eine Empfehlung, keine Rangliste.
+async function loadTopSongs() {
+    // "all" heisst: alles, was der globale Jahresfilter freigibt.
+    const year = "all";
+    const sort = document.getElementById("tops-sort").value;
+    const limit = document.getElementById("tops-limit").value;
+    showLoader("Bestenliste wird berechnet...");
+    try {
+        const data = await apiCall(`/api/top_songs?year=${year}&sort=${sort}&limit=${limit}`);
+        hideLoader();
+        if(data.error) return alert(data.error);
+        state.topSongs = data;
+        renderTopSongs();
+        document.getElementById("tops-results").classList.remove("hidden");
+        lucide.createIcons();
+    } catch(e) {
+        hideLoader();
+        alert("Fehler: " + e.message);
+    }
+}
+
+function renderTopSongs() {
+    const data = state.topSongs;
+    if(!data) return;
+    const filterTxt = (document.getElementById("tops-filter").value || "").toLowerCase();
+    const all = data.songs || [];
+    const shown = filterTxt
+        ? all.filter(s => (s.track||"").toLowerCase().includes(filterTxt)
+                      || (s.artist||"").toLowerCase().includes(filterTxt)
+                      || (s.album||"").toLowerCase().includes(filterTxt))
+        : all;
+
+    // Kennzahlen
+    const uniqueArtists = new Set(all.map(s => s.artist)).size;
+    const totalPlays = all.reduce((a,s) => a + s.play_count, 0);
+    document.getElementById("tops-stat-cards").innerHTML = `
+        <div class="stat-card"><h4>Streams im Zeitraum</h4><div class="val">${data.total_streams.toLocaleString()}</div></div>
+        <div class="stat-card"><h4>Verschiedene Songs</h4><div class="val">${data.total_songs.toLocaleString()}</div></div>
+        <div class="stat-card"><h4>Hörzeit</h4><div class="val">${data.total_hours.toLocaleString()} h</div></div>
+        <div class="stat-card"><h4>Artists in der Liste</h4><div class="val">${uniqueArtists.toLocaleString()}</div></div>`;
+
+    const pct = data.total_streams ? (totalPlays / data.total_streams * 100) : 0;
+    document.getElementById("tops-summary").innerHTML = filterTxt
+        ? `<strong>${shown.length}</strong> von ${all.length} Songs nach Filter „${filterTxt.replace(/[<>&]/g,'')}"`
+        : `Die Top ${all.length} Songs decken <strong>${pct.toFixed(1)} %</strong> aller Streams ab.`;
+
+    if(!shown.length) {
+        document.getElementById("tops-list").innerHTML =
+            '<div style="padding:2rem;text-align:center;color:var(--muted);">Keine Songs gefunden.</div>';
+        return;
+    }
+
+    const maxPlays = Math.max(...shown.map(s => s.play_count), 1);
+    const maxMin = Math.max(...shown.map(s => s.total_minutes), 1);
+    const esc = (s) => String(s==null ? '' : s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    const safe = (s) => String(s==null ? '' : s).split("'").join("\\'");
+
+    document.getElementById("tops-list").innerHTML = shown.map(s => {
+        const skipPct = (s.skip_rate * 100).toFixed(0);
+        const donePct = (s.completion_rate * 100).toFixed(0);
+        const skipColor = s.skip_rate > 0.7 ? '#e5534b' : s.skip_rate > 0.4 ? '#f9c22e' : 'var(--green)';
+        const playBar = Math.max(2, (s.play_count / maxPlays * 100)).toFixed(0);
+        const minBar = Math.max(2, (s.total_minutes / maxMin * 100)).toFixed(0);
+        return `
+        <div style="display:flex;align-items:center;gap:0.85rem;padding:0.65rem 0.5rem;border-bottom:1px solid var(--border);border-radius:6px;transition:background 0.15s;"
+             onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''"
+             onclick="openSongDetail('${safe(s.track)}','${safe(s.artist)}')">
+            <div style="width:26px;text-align:right;font-weight:800;color:var(--muted);font-size:0.9rem;flex-shrink:0;">${s.rank}</div>
+            <div style="flex:1;min-width:0;overflow:hidden;">
+                <div style="font-size:0.9rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.track)}</div>
+                <div style="font-size:0.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.artist)}${s.album ? " · " + esc(s.album) : ""}</div>
+                <div style="margin-top:0.35rem;height:3px;background:var(--border);border-radius:2px;display:flex;gap:2px;">
+                    <div style="height:3px;border-radius:2px;background:var(--green);opacity:0.75;width:${playBar}%;"></div>
+                    <div style="height:3px;border-radius:2px;background:var(--similar);opacity:0.55;width:${minBar}%;"></div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.9rem;flex-shrink:0;font-size:0.82rem;">
+                <div style="text-align:center;min-width:40px;">
+                    <div style="font-weight:700;color:var(--text);font-size:0.95rem;">${s.play_count}</div>
+                    <div style="font-size:0.7rem;color:var(--muted);">plays</div>
+                </div>
+                <div style="text-align:center;min-width:52px;">
+                    <div style="color:var(--text);">${s.total_minutes.toLocaleString()}</div>
+                    <div style="font-size:0.7rem;color:var(--muted);">min</div>
+                </div>
+                <div style="text-align:center;min-width:44px;">
+                    <div style="color:var(--text);">${s.avg_minutes.toFixed(1)}</div>
+                    <div style="font-size:0.7rem;color:var(--muted);">ø/play</div>
+                </div>
+                <div style="text-align:center;min-width:38px;">
+                    <div style="font-weight:700;color:${skipColor};">${skipPct}%</div>
+                    <div style="font-size:0.7rem;color:var(--muted);">skip</div>
+                </div>
+                <div style="text-align:center;min-width:38px;">
+                    <div style="color:var(--text);">${donePct}%</div>
+                    <div style="font-size:0.7rem;color:var(--muted);">fertig</div>
+                </div>
+                ${s.spotify_url ? `<a href="${s.spotify_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+                    style="display:flex;align-items:center;color:var(--green);" title="In Spotify öffnen">
+                    <i data-lucide="external-link" style="width:13px;height:13px;"></i></a>` : ""}
+                <i data-lucide="chevron-right" style="width:13px;height:13px;color:var(--border);"></i>
+            </div>
+        </div>`;
+    }).join("");
+    lucide.createIcons();
+}
+
+document.getElementById("tops-btn")?.addEventListener("click", loadTopSongs);
+document.getElementById("tops-filter")?.addEventListener("input", renderTopSongs);
+document.getElementById("tops-csv-btn")?.addEventListener("click", async () => {
+    const data = state.topSongs;
+    if(!data || !data.songs || !data.songs.length) return alert("Keine Daten zum Kopieren.");
+    const head = "Platz;Titel;Artist;Album;Plays;Minuten;O Min pro Play;Skip %;Zu Ende %;Score;Spotify";
+    const lines = data.songs.map(s => [
+        s.rank, s.track, s.artist, s.album, s.play_count,
+        String(s.total_minutes).replace(".", ","),
+        String(s.avg_minutes).replace(".", ","),
+        (s.skip_rate * 100).toFixed(1).replace(".", ","),
+        (s.completion_rate * 100).toFixed(1).replace(".", ","),
+        String(s.engagement_score).replace(".", ","),
+        s.spotify_url || ""
+    ].join(";"));
+    copyText([head, ...lines].join("\n"), document.getElementById("tops-csv-btn"));
+    showToast("Bestenliste als CSV kopiert");
+});
 
 // ── MODULE: Datenqualität (auffällige Zeitstempel) ──
 function applyQuality(q) {
@@ -308,7 +679,9 @@ if(outliersToggle) {
             const res = await apiCall("/api/outliers", "POST", { include: outliersToggle.checked });
             hideLoader();
             if(res.error) return alert(res.error);
-            state.years = res.years;
+            state.years = res.years || state.years;
+            if(res.total_streams !== undefined) state.totalStreams = res.total_streams;
+            if(res.year_scope) state.yearScope = res.year_scope;
             updateYearSelects();
             applyQuality(res.quality);
             showToast(outliersToggle.checked
@@ -579,9 +952,9 @@ function renderRecommendations(skipFetch = false) {
 
 document.getElementById("rec-btn").addEventListener("click", async () => {
     showLoader("Empfehlungen...");
-    const data = await apiCall("/recommend", "POST", {
-        year: parseInt(document.getElementById("rec-year").value),
-        top_n: parseInt(document.getElementById("rec-topn").value),
+const data = await apiCall("/recommend", "POST", {
+       year: globalTargetYear(),
+       top_n: parseInt(document.getElementById("rec-topn").value),
         min_minutes: parseFloat(document.getElementById("rec-min").value)
     });
     hideLoader();
@@ -777,8 +1150,8 @@ document.getElementById("comp-btn").addEventListener("click", async () => {
 
 // ── MODULE: Heatmap ──
 document.getElementById("heat-btn").addEventListener("click", async () => {
-    showLoader("Visualisiere Hörzeiten...");
-    const year = document.getElementById("heat-year").value;
+showLoader("Visualisiere Hörzeiten...");
+       const year = "all";
     const viewMode = document.getElementById("heat-view-mode") ? document.getElementById("heat-view-mode").value : "both";
     const data = await apiCall("/api/heatmap?year=" + year);
     hideLoader();
@@ -1194,7 +1567,7 @@ function renderSkipList() {
 document.getElementById("skip-btn").addEventListener("click", async () => {
     _destroySkipCharts();
     showLoader("Skip-Analyse läuft...");
-    const y = document.getElementById("skip-year").value;
+    const y = "all";
     const m = document.getElementById("skip-min").value;
     const n = document.getElementById("skip-topn")?.value || 30;
 
@@ -1374,22 +1747,23 @@ document.querySelectorAll(".sortable-header").forEach(hdr => {
 let allTimelineData = [];
 
 document.getElementById("disc-btn").addEventListener("click", async () => {
-    const year = document.getElementById("disc-year").value;
-    if(!year) return;
-    showLoader(`Analysiere Entdeckungen für ${year}...`);
+const year = "all";
+       showLoader(`Analysiere Entdeckungen für ${year === "all" ? "alle Jahre" : year}...`);
     const data = await apiCall("/api/discover?year=" + year);
     hideLoader();
     if(data.error) return alert("Fehler: " + data.error);
+    // year="all" liefert Jahreslabel "all" - fuer die Ueberschriften deutsch.
+    const yLabel = data.year === "all" ? "alle Jahre" : data.year;
 
     // 1. Stats Summary
     const statsContainer = document.getElementById("disc-stats");
     statsContainer.innerHTML = `
         <div class="stat-card">
-            <h4>Gehörte Artists (${data.year})</h4>
+            <h4>Gehörte Artists (${yLabel})</h4>
             <div class="val">${data.total_artists.toLocaleString()}</div>
         </div>
         <div class="stat-card">
-            <h4>Erst-Entdeckungen (${data.year})</h4>
+            <h4>Erst-Entdeckungen (${yLabel})</h4>
             <div class="val" style="color:var(--green);">${data.new_discovered_artists.length}</div>
             <div style="font-size:0.8rem; color:var(--muted);">Nie zuvor gehört</div>
         </div>
@@ -1414,7 +1788,7 @@ document.getElementById("disc-btn").addEventListener("click", async () => {
             <div class="card" style="padding:0.75rem 1rem; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="searchArtist('${a.artist.replace(/'/g, "\'")}')">
                 <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:0.5rem;">
                     <strong style="color:var(--text); font-size:0.9rem;">${i+1}. ${a.artist}</strong><br>
-                    <small style="color:var(--green); font-size:0.75rem;">Neu in ${data.year} entdeckt</small>
+                    <small style="color:var(--green); font-size:0.75rem;">Neu in ${a.year !== undefined && a.year !== null ? a.year : yLabel} entdeckt</small>
                 </div>
                 <div style="text-align:right; font-size:0.8rem; color:var(--muted); white-space:nowrap;">
                     ${a.play_count} Plays<br><small>${a.total_min}m</small>
@@ -1537,10 +1911,10 @@ function _destroyMonthlyCharts() {
     _monthlyCharts = {};
 }
 
-document.getElementById("monthly-year").addEventListener("change", async (e) => {
+async function loadMonthly() {
     _destroyMonthlyCharts();
     showLoader("Lade Monatsdaten...");
-    const data = await apiCall(`/api/monthly_v2?year=${e.target.value}`);
+    const data = await apiCall("/api/monthly_v2?year=all");
     hideLoader();
     if (!data || data.error || !data.months) return;
 
@@ -1643,7 +2017,7 @@ document.getElementById("monthly-year").addEventListener("change", async (e) => 
         </div>`;
     }).join('');
     lucide.createIcons();
-});
+}
 
 
 // ── MODULE: Sessions ──
@@ -1662,11 +2036,10 @@ const CHART_OPTS = {
     }
 };
 
-document.getElementById("sessions-year").addEventListener("change", async (e) => {
+async function loadSessions() {
     _destroySessionCharts();
-    const year = e.target.value;
     showLoader("Lade Sessions...");
-    const data = await apiCall(`/api/sessions_v2?year=${year}`);
+    const data = await apiCall("/api/sessions_v2?year=all");
     hideLoader();
     if (!data || data.error) return;
 
@@ -1763,17 +2136,15 @@ document.getElementById("sessions-year").addEventListener("change", async (e) =>
             }}
         });
     }
-});
+}
 
 
 // ── MODULE: Platforms ──
-document.getElementById("platforms-year").addEventListener("change", async (e) => {
-    const year = e.target.value;
-    if(!year) return;
+async function loadPlatforms() {
     showLoader("Lade...");
-    const data = await apiCall("/api/platforms?year=" + year);
+    const data = await apiCall("/api/platforms?year=all");
     hideLoader();
-    if(data.error || !data.platforms) return;
+    if (data.error || !data.platforms) return;
     
     if(state.charts['platforms']) state.charts['platforms'].destroy();
     const ctx = document.getElementById("platforms-chart").getContext("2d");
@@ -1805,7 +2176,8 @@ document.getElementById("platforms-year").addEventListener("change", async (e) =
             <div style="color:var(--muted);">${p.pct.toFixed(1)}%</div>
         </div>
     `).join("");
-});
+}
+
 
 // ── MODULE: Albums ──
 let _albumsData = [];
@@ -1879,16 +2251,14 @@ function _renderAlbums() {
     lucide.createIcons();
 }
 
-document.getElementById("albums-year").addEventListener("change", async (e) => {
-    const year = e.target.value;
-    if (!year) return;
+async function loadAlbums() {
     showLoader("Lade Alben...");
-    const data = await apiCall("/api/albums?year=" + year + "&top_n=50");
+    const data = await apiCall("/api/albums?year=all&top_n=50");
     hideLoader();
     if (data.error) return;
     _albumsData = data;
     _renderAlbums();
-});
+}
 
 document.getElementById("albums-filter")?.addEventListener("input", _renderAlbums);
 document.getElementById("albums-sort")?.addEventListener("change", _renderAlbums);
@@ -1896,7 +2266,7 @@ document.getElementById("albums-sort")?.addEventListener("change", _renderAlbums
 // ── MODULE: Behavior & Loops ──
 document.getElementById("behavior-btn").addEventListener("click", async () => {
     showLoader("Analysiere Hörverhalten & Dauerschleifen...");
-    const year = document.getElementById("behavior-year").value;
+    const year = "all";
     const data = await apiCall("/api/behavior?year=" + year);
     hideLoader();
     if(data.error) return alert("Fehler: " + data.error);
@@ -2232,7 +2602,7 @@ async function openSongDetail(track, artist) {
                         </div>
                         <i data-lucide="chevron-right" style="width:14px;height:14px;color:var(--muted);flex-shrink:0;"></i>
                     </div>`).join("");
-                simWrap.style.display = "block";
+simWrap.style.display = "block";
                 lucide.createIcons();
             }
         });
@@ -2381,10 +2751,14 @@ document.getElementById("album-detail-modal").addEventListener("click", (e) => {
     if (e.target === document.getElementById("album-detail-modal")) _closeAlbumModal();
 });
 
-// ESC key closes any open modal
+// ESC key closes the topmost open modal only - sind zwei Fenster gestapelt
+// (Song im Album), soll nur das oberste verschwinden.
 document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (!document.getElementById("song-detail-modal").classList.contains("hidden")) _closeSongModal();
+    if (!document.getElementById("song-detail-modal").classList.contains("hidden")) {
+        _closeSongModal();
+        return;
+    }
     if (!document.getElementById("album-detail-modal").classList.contains("hidden")) _closeAlbumModal();
     if (!document.getElementById("settings-modal").classList.contains("hidden"))
         document.getElementById("settings-modal").classList.add("hidden");
@@ -2631,16 +3005,15 @@ document.querySelectorAll(".pl-genre-chip").forEach(chip => {
 function _initPlaylistYears() {
     const sel = document.getElementById("pl-year-select");
     if (!sel || sel.options.length > 0) return;
-    const refSel = document.getElementById("sessions-year") || document.getElementById("monthly-year");
-    if (refSel) {
-        Array.from(refSel.options).forEach(o => {
-            if (o.value && o.value !== "all") {
-                const opt = document.createElement("option");
-                opt.value = opt.textContent = o.value;
-                sel.appendChild(opt);
-            }
-        });
-    }
+// Die Playlist arbeitet innerhalb der globalen Jahresauswahl.
+       const pool = state.yearScope && state.yearScope.all
+           ? state.years
+           : (state.yearScope && state.yearScope.selected) || state.years;
+       pool.forEach(y => {
+           const opt = document.createElement("option");
+           opt.value = opt.textContent = String(y);
+           sel.appendChild(opt);
+       });
     if (sel.options.length === 0) {
         ["2026", "2025", "2024"].forEach(y => {
             const opt = document.createElement("option");
@@ -2861,6 +3234,8 @@ async function checkExistingSession() {
         const res = await apiCall("/api/session_status");
         if(res.loaded) {
             state.years = res.years;
+            state.totalStreams = res.total_streams;
+            if(res.year_scope) state.yearScope = res.year_scope;
             state.dataLoaded = true;
             updateYearSelects();
             document.getElementById("upload-section").classList.add("hidden");
@@ -2868,6 +3243,8 @@ async function checkExistingSession() {
             document.getElementById("panel-recommend").classList.remove("hidden");
             updateHeaderSyncBtn();
             applyQuality(res.quality);
+            if(res.media) applyMediaInfo(res.media);
+            if(res.blacklist) renderBlacklist(res.blacklist);
             lucide.createIcons();
             showToast(`Datensatz aktiv: ${res.total_streams.toLocaleString()} Streams`);
         }

@@ -20,6 +20,7 @@ const KNOWN_PATHS = [
   "/api/search", "/api/song", "/api/album_detail", "/api/session_status",
   "/api/heartbeat", "/api/disconnect", "/api/playlist/generate", "/api/outliers",
   "/api/cache/info", "/api/cache/restore", "/api/cache/clear", "/api/settings",
+  "/api/top_songs",
 ];
 
 const KNOWN_PREFIXES = ["/api/heatmap/cell", "/api/lastfm/"];

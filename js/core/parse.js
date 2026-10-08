@@ -27,6 +27,17 @@ export function ingestRecords(builder, records) {
     const msPlayed = Number(r.ms_played);
     const safeMs = Number.isFinite(msPlayed) ? msPlayed : 0;
 
+    // Medientyp: Spoti fys Export mischt Musik, Podcasts und Hörbücher in
+    // denselben Dateien. Ohne Trennung landen Episoden in "Top Artists".
+    const has = (v) => v !== null && v !== undefined && String(v).trim() !== "";
+    let mediaType = MEDIA_MUSIC;
+    if (has(r.audiobook_title) || has(r.audiobook_chapter_title) || has(r.audiobook_uri)) {
+      mediaType = MEDIA_AUDIOBOOK;
+    }
+    if (has(r.episode_name) || has(r.spotify_episode_uri)) {
+      mediaType = MEDIA_PODCAST;
+    }
+
     const d = new Date(ts);
     // UTC-Felder (wie pandas mit utc=True) und lokale Felder parallel. Die
     // lokale Variante braucht der Nutzer fuer die Tagesverlaeufe: ein Stream
@@ -57,8 +68,13 @@ export function ingestRecords(builder, records) {
     builder.ymLocal.push(local.getUTCFullYear() * 100 + local.getUTCMonth() + 1);
     builder.dayLocal.push(Math.floor((ts + tzOffsetMinutes(ts) * 60000) / 86400000));
     builder.day.push(Math.floor(ts / 86400000));
+    builder.media.push(mediaType);
   }
 }
+
+export const MEDIA_MUSIC = 0;
+export const MEDIA_PODCAST = 1;
+export const MEDIA_AUDIOBOOK = 2;
 
 /**
  * Zeitzonenverschiebung in Minuten fuer einen Zeitpunkt (Ost +, West -).
@@ -77,6 +93,7 @@ export function createBuilder() {
     platform: [], reason_end: [], reason_start: [],
     year: [], hour: [], weekday: [], month: [], ym: [], day: [],
     yearLocal: [], hourLocal: [], weekdayLocal: [], monthLocal: [], ymLocal: [], dayLocal: [],
+    media: [],
   };
 }
 
@@ -149,6 +166,7 @@ export function finalizeFrame(builder) {
     month: [Uint8Array.from(builder.month), "i"],
     ym: [Int32Array.from(builder.ym), "i"],
     day: [Int32Array.from(builder.day), "i"],
+    media: [Uint8Array.from(builder.media), "i"],
     // Lokale Zeitvariante. Nicht in den Auswertungen enthalten, solange der
     // Nutzer auf UTC steht - siehe Frame.withAliases().
     year_local: [Int16Array.from(builder.yearLocal), "i"],
