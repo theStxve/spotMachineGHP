@@ -3552,8 +3552,14 @@ async function loadSearchesTab() {
       `).join("");
     }
 
+    // Date range
+    const rangeEl = document.getElementById("searches-date-range");
+    if (rangeEl && data.date_range) {
+      rangeEl.textContent = `· ${data.date_range.start.split(" ")[0]} – ${data.date_range.end.split(" ")[0]} (${data.date_range.days_count} Tage)`;
+    }
+
     // Table render
-    _renderSearchesTable(data.recent_searches || []);
+    _renderSearchesTable(data.recent_searches || [], true);
     lucide.createIcons();
   } catch (e) {
     hideLoader();
@@ -3621,14 +3627,26 @@ function _renderSearchesCharts(data) {
   }
 }
 
-function _renderSearchesTable(items) {
+let _searchesCurrentPage = 0;
+let _searchesCurrentItems = [];
+const SEARCHES_PAGE_SIZE = 100;
+
+function _renderSearchesTable(items, resetPage = true) {
   const tbody = document.getElementById("searches-table-body");
   if (!tbody) return;
-  if (!items || !items.length) {
+  _searchesCurrentItems = items || [];
+  if (resetPage) _searchesCurrentPage = 0;
+
+  if (!_searchesCurrentItems.length) {
     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine passenden Suchen gefunden.</td></tr>';
+    _updateSearchesPagination();
     return;
   }
-  tbody.innerHTML = items.slice(0, 150).map(s => `
+
+  const start = _searchesCurrentPage * SEARCHES_PAGE_SIZE;
+  const pageItems = _searchesCurrentItems.slice(start, start + SEARCHES_PAGE_SIZE);
+
+  tbody.innerHTML = pageItems.map(s => `
     <tr>
       <td style="color:var(--muted); font-size:0.76rem; font-family:monospace;">${s.time}</td>
       <td style="font-weight:600; color:var(--text);">${s.query}</td>
@@ -3639,6 +3657,20 @@ function _renderSearchesTable(items) {
     </tr>
   `).join("");
   lucide.createIcons();
+  _updateSearchesPagination();
+}
+
+function _updateSearchesPagination() {
+  const total = _searchesCurrentItems.length;
+  const totalPages = Math.ceil(total / SEARCHES_PAGE_SIZE);
+  const start = _searchesCurrentPage * SEARCHES_PAGE_SIZE + 1;
+  const end = Math.min(start + SEARCHES_PAGE_SIZE - 1, total);
+  const infoEl = document.getElementById("searches-page-info");
+  const prevBtn = document.getElementById("searches-prev-btn");
+  const nextBtn = document.getElementById("searches-next-btn");
+  if (infoEl) infoEl.textContent = total > 0 ? `${start}–${end} von ${total.toLocaleString()}` : "0 Ergebnisse";
+  if (prevBtn) prevBtn.disabled = _searchesCurrentPage <= 0;
+  if (nextBtn) nextBtn.disabled = _searchesCurrentPage >= totalPages - 1;
 }
 
 function filterSearchesTable(query) {
@@ -3652,10 +3684,29 @@ function filterSearchesTable(query) {
 document.getElementById("searches-filter-input")?.addEventListener("input", (e) => {
   const filter = e.target.value.toLowerCase().trim();
   if (!_searchesRawData || !_searchesRawData.recent_searches) return;
-  const filtered = _searchesRawData.recent_searches.filter(s =>
-    s.query.toLowerCase().includes(filter) || s.platform.toLowerCase().includes(filter)
-  );
-  _renderSearchesTable(filtered);
+  const filtered = filter
+    ? _searchesRawData.recent_searches.filter(s =>
+        s.query.toLowerCase().includes(filter) || s.platform.toLowerCase().includes(filter)
+      )
+    : _searchesRawData.recent_searches;
+  _renderSearchesTable(filtered, true);
+});
+
+document.getElementById("searches-prev-btn")?.addEventListener("click", () => {
+  if (_searchesCurrentPage > 0) {
+    _searchesCurrentPage--;
+    _renderSearchesTable(_searchesCurrentItems, false);
+    document.getElementById("searches-table-body")?.closest("div")?.scrollTo(0, 0);
+  }
+});
+
+document.getElementById("searches-next-btn")?.addEventListener("click", () => {
+  const totalPages = Math.ceil(_searchesCurrentItems.length / SEARCHES_PAGE_SIZE);
+  if (_searchesCurrentPage < totalPages - 1) {
+    _searchesCurrentPage++;
+    _renderSearchesTable(_searchesCurrentItems, false);
+    document.getElementById("searches-table-body")?.closest("div")?.scrollTo(0, 0);
+  }
 });
 
 

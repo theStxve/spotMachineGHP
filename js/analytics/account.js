@@ -137,7 +137,12 @@ export function analyzeSearches(searches, frame) {
     weekday_labels: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
     monthly_trend: monthlyTrend,
     ghost_searches: ghostSearches.slice(0, 15),
-    recent_searches: cleaned.slice(0, 200),
+    recent_searches: cleaned,
+    date_range: cleaned.length > 0 ? {
+      start: cleaned[cleaned.length - 1].time,
+      end: cleaned[0].time,
+      days_count: new Set(cleaned.map(s => s.time.split(" ")[0])).size
+    } : null,
   };
 }
 
