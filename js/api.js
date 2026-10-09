@@ -10,7 +10,7 @@ import {
   getFrame, getMeta, hasData, clearFrame, saveCache, loadCache, peekCache, clearCache,
   loadFiles, setIncludeOutliers, getQuality, getSettings, setSettings, applyTimeMode,
   setOnlyMusic, getMedia, setArtistBlacklist, getBlacklist, setYears, getYearScope,
-  appendStreams,
+  setYearsExcluded, getYearExclusion, appendStreams,
 } from "./core/store.js";
 import { get_available_years, get_all_artists, recommend } from "./analytics/core.js";
 import { get_top_songs } from "./analytics/topsongs.js";
@@ -104,19 +104,23 @@ export async function handleRequest(method, url, body, query) {
     const previous = getSettings();
     const blBefore = JSON.stringify(previous.artist_blacklist || []);
     const yrBefore = JSON.stringify(previous.years || []);
+    const exBefore = JSON.stringify(previous.years_excluded || []);
     if (Array.isArray(body && body.artist_blacklist)) setArtistBlacklist(body.artist_blacklist);
     if (Array.isArray(body && body.years)) setYears(body.years);
+    if (Array.isArray(body && body.years_excluded)) setYearsExcluded(body.years_excluded);
     const next = setSettings(body || {});
     const blAfter = JSON.stringify(next.artist_blacklist || []);
     const yrAfter = JSON.stringify(next.years || []);
+    const exAfter = JSON.stringify(next.years_excluded || []);
     const tzChanged = body && body.tz_mode !== undefined && previous.tz_mode !== next.tz_mode;
     const mediaChanged = body && body.only_music !== undefined && previous.only_music !== next.only_music;
     const blChanged = blBefore !== blAfter;
     const yrChanged = yrBefore !== yrAfter;
-    if (mediaChanged || blChanged || yrChanged) setOnlyMusic(next.only_music);
+    const exChanged = exBefore !== exAfter;
+    if (mediaChanged || blChanged || yrChanged || exChanged) setOnlyMusic(next.only_music);
     else if (tzChanged) applyTimeMode(next.tz_mode);
     let cache = null;
-    if (tzChanged || mediaChanged || blChanged || yrChanged) cache = await saveCache({ profile: next.profile });
+    if (tzChanged || mediaChanged || blChanged || yrChanged || exChanged) cache = await saveCache({ profile: next.profile });
     const m = getMeta();
     return {
       success: true,
@@ -125,6 +129,7 @@ export async function handleRequest(method, url, body, query) {
       years: m.years,
       media: getMedia(),
       blacklist: getBlacklist(),
+      year_exclusion: getYearExclusion(),
       year_scope: getYearScope(),
       cache_saved: cache ? cache.ok : null,
       cache_error: cache && !cache.ok ? cache.reason : null,
@@ -162,6 +167,7 @@ export async function handleRequest(method, url, body, query) {
       quality: qualitySummary(getQuality()),
       media: getMedia(),
       blacklist: getBlacklist(),
+      year_exclusion: getYearExclusion(),
       year_scope: getYearScope(),
     };
   }

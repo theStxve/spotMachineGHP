@@ -6,6 +6,9 @@ const state = {
   lastfmKey: localStorage.getItem('lastfmKey') || '',
   lastfmUser: localStorage.getItem('lastfmUser') || '',
   settings: JSON.parse(localStorage.getItem('settings') || '{"genreTags":true,"similarSongs":false,"artistInfo":false,"trackStats":false}'),
+  // Jahre, die dauerhaft aus allen Auswertungen herausgenommen werden
+  // (globale Ausschlussliste - wie artist_blacklist, nur für Jahrgänge).
+  excludedYears: [],
   lastResults: [],
   lastYear: null,
   tabCache: {},
@@ -14,6 +17,103 @@ const state = {
   skipData: [],
   skipSort: { col: 'skip_rate', asc: false }
 };
+
+// ── GLOBALE JAHRES-INTEGRATION (years_excluded) ─────────────────────────────────
+// Die globalen Jahre waren bisher nur eine Mehrfach-Auswahl über die Chips.
+// Mit years_excluded wird ein Jahr dauerhaft aus ALLEN Auswertungen rausgenommen.
+// Die Dropdowns der Tabs zeigen immer nur noch die Jahre, die nicht ausgeschlossen
+// sind; beim Auswählen eines Jahres wird es sofort in diese Liste aufgenommen.
+
+function excludedYearSet() {
+  const out = new Set();
+  (state.excludedYears || []).forEach(function (y) {
+    const n = Number(y);
+    if (Number.isFinite(n)) out.add(n);
+  });
+  return out;
+}
+
+function availableYears() {
+  return (state.years || []).filter(function (y) { return !excludedYearSet().has(Number(y)); });
+}
+
+function fillYearSelect(id, years, includeAll) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const opts = years.map(function (y) { return '<option value="' + y + '">' + y + '</option>'; }).join('');
+  sel.innerHTML = (includeAll ? '<option value="all">Alle</option>' : '') + opts;
+}
+
+// Alle Tab-Jahres-Dropdowns neu befüllen (verfügbare Jahre = alle Jahre - ausgeschlossen)
+function refreshYearDropdowns() {
+  const years = availableYears();
+  const optsAll = '<option value="all">Alle</option>' + years.map(function (y) { return '<option value="' + y + '">' + y + '</option>'; }).join('');
+  const opts = years.map(function (y) { return '<option value="' + y + '">' + y + '</option>'; }).join('');
+  const drops = {
+    'rec-year': opts,
+    'tops-year': optsAll,
+    'heat-year': optsAll,
+    'skip-year': optsAll,
+    'disc-year': opts,
+    'monthly-year': optsAll,
+    'sessions-year': optsAll,
+    'platforms-year': optsAll,
+    'behavior-year': optsAll,
+    'albums-year': optsAll,
+    'comp-y1': opts,
+    'comp-y2': opts,
+    'pl-year-select': opts
+  };
+  for (const id in drops) {
+    if (drops.hasOwnProperty(id)) {
+      const el = document.getElementById(id);
+      if (el) {
+        const curVal = el.value;
+        el.innerHTML = drops[id];
+        if (curVal && (curVal === 'all' || years.includes(Number(curVal)) || years.includes(String(curVal)))) {
+          el.value = curVal;
+        }
+      }
+    }
+  }
+  updateYearSelects();
+}
+
+// Pro Tab ein Change-Handler: Wenn der Nutzer im Tab ein Jahr auswählt, wird dieser Tab aktualisiert
+function bindYearDropdowns() {
+  document.getElementById("tops-year")?.addEventListener("change", () => loadTopSongs());
+  document.getElementById("heat-year")?.addEventListener("change", () => document.getElementById("heat-btn")?.click());
+  document.getElementById("skip-year")?.addEventListener("change", () => document.getElementById("skip-btn")?.click());
+  document.getElementById("disc-year")?.addEventListener("change", () => document.getElementById("disc-btn")?.click());
+  document.getElementById("monthly-year")?.addEventListener("change", () => loadMonthly());
+  document.getElementById("sessions-year")?.addEventListener("change", () => loadSessions());
+  document.getElementById("platforms-year")?.addEventListener("change", () => loadPlatforms());
+  document.getElementById("albums-year")?.addEventListener("change", () => loadAlbums());
+  document.getElementById("behavior-year")?.addEventListener("change", () => document.getElementById("behavior-btn")?.click());
+}
+
+function isExcludedYear(year) {
+  return excludedYearSet().has(Number(year));
+}
+
+// Exklusion speichern (in Settings: years_excluded) und Tabs neu rendern
+async function applyYearExclusion(years, toastMsg) {
+  showLoader('Wende Jahres-Ausschluss an...');
+  try {
+    const res = await saveSettings({ years_excluded: years });
+    hideLoader();
+    if (res.year_exclusion) renderYearExclusion(res.year_exclusion);
+    refreshTabsAfterFilter();
+    refreshYearDropdowns();
+    if (toastMsg) showToast(toastMsg);
+    else showToast((years.length ? years.length + ' Jahrgang' + (years.length === 1 ? '' : 'e') + ' ausgeschlossen — ' : '') + (res.total_streams || 0).toLocaleString() + ' Streams');
+    return true;
+  } catch (e) {
+    hideLoader();
+    alert('Fehler beim Ausschluss: ' + e.message);
+    return false;
+  }
+}
 
 // ── ICON HELPER ──
 function icon(name, cls = "") {
@@ -180,6 +280,7 @@ async function applyGlobalYears(years) {
         state.yearScope.pending = false;
     }
     updateYearSelects();
+    refreshYearDropdowns();
     refreshActiveTab();
     showToast(state.yearScope.all ? "Alle Jahre aktiv" : `${state.yearScope.selected.length} Jahre aktiv`);
 }
@@ -350,17 +451,22 @@ document.getElementById("cache-wipe-btn")?.addEventListener("click", async () =>
 
 // ── MODULE: Einstellungen (Zeitzone, Medienfilter, Profilname) ──
 async function loadSettings() {
-    const s = await apiCall("/api/settings");
-    state.settingsTz = s.tz_mode;
-    const tz = document.getElementById("toggle-tz-local");
-    if(tz) tz.checked = s.tz_mode === "local";
-    const prof = document.getElementById("profile-name");
-    if(prof) prof.value = s.profile || "";
-    const om = document.getElementById("toggle-only-music");
-    if(om) om.checked = !!s.only_music;
-    applyMediaInfo(s.media);
-    renderBlacklist(s.blacklist || { names: [], matched: [], unknown: [] });
-    updateTzHint();
+  const s = await apiCall("/api/settings");
+  state.settingsTz = s.tz_mode;
+  const tz = document.getElementById("toggle-tz-local");
+  if(tz) tz.checked = s.tz_mode === "local";
+  const prof = document.getElementById("profile-name");
+  if(prof) prof.value = s.profile || "";
+  const om = document.getElementById("toggle-only-music");
+  if(om) om.checked = !!s.only_music;
+  applyMediaInfo(s.media);
+  renderBlacklist(s.blacklist || { names: [], matched: [], unknown: [] });
+  if (s.year_exclusion) renderYearExclusion(s.year_exclusion);
+  if (s.years && s.years.length) {
+    state.years = s.years;
+    refreshYearDropdowns();
+  }
+  updateTzHint();
 }
 
 function applyMediaInfo(media) {
@@ -422,6 +528,65 @@ async function removeFromBlacklist(index) {
     await applyBlacklist(current, `${removed} wieder freigegeben`);
 }
 
+async function renderYearExclusion(info) {
+  state.excludedYears = info.excluded || [];
+  const box = document.getElementById("years-excluded-chips");
+  const hint = document.getElementById("years-excluded-hint");
+  if (!box || !hint) return;
+  if (!info.excluded || !info.excluded.length) {
+    box.innerHTML = '<span style="font-size:0.78rem;color:var(--muted);">Keine Jahre ausgeschlossen.</span>';
+    hint.textContent = "";
+    return;
+  }
+  box.innerHTML = info.excluded.map(function (y, i) {
+    return '<span class="tag-pill" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.25rem 0.5rem;font-size:0.78rem;">' +
+      y +
+      '<i data-lucide="x" data-yex-remove="' + i + '" style="width:11px;height:11px;cursor:pointer;"></i></span>';
+  }).join("");
+  box.querySelectorAll("[data-yex-remove]").forEach(function (el) {
+    el.addEventListener("click", function () { removeFromYearExclusion(Number(el.dataset.yexRemove)); });
+  });
+  hint.textContent = info.years_hidden + " Jahrgang" + (info.years_hidden === 1 ? "" : "e") + " raus · " + (info.streams_hidden || 0).toLocaleString() + " Streams";
+  lucide.createIcons();
+}
+
+async function removeFromYearExclusion(index) {
+  const current = ((state.excludedYears || []).slice());
+  const removed = current.splice(index, 1)[0];
+  await applyYearExclusion(current, `${removed} wieder eingeschlossen`);
+}
+
+document.getElementById("years-excluded-add-btn")?.addEventListener("click", async () => {
+  const input = document.getElementById("years-excluded-input");
+  const year = Number(input.value);
+  if (!Number.isFinite(year)) return;
+  const current = (state.excludedYears || []).slice();
+  if (current.indexOf(year) !== -1) {
+    showToast("Dieses Jahr ist bereits ausgeschlossen.", "info");
+    return;
+  }
+  current.push(year);
+  await applyYearExclusion(current, `${year} als ausgeschlossen markiert`);
+  input.value = "";
+});
+
+document.getElementById("years-excluded-input")?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const input = e.target;
+  const year = Number(input.value);
+  if (!Number.isFinite(year)) return;
+  const current = (state.excludedYears || []).slice();
+  if (current.indexOf(year) !== -1) {
+    showToast("Dieses Jahr ist bereits ausgeschlossen.", "info");
+    return;
+  }
+  current.push(year);
+  applyYearExclusion(current).then(() => { input.value = ""; });
+});
+
+
+
 async function applyBlacklist(names, toastMsg) {
     showLoader("Wende Blacklist an...");
     try {
@@ -474,7 +639,10 @@ async function saveSettings(patch, onDone) {
     if(res.years && res.years.length) {
         state.years = res.years;
         updateYearSelects();
+        refreshYearDropdowns();
     }
+    if (res.year_exclusion) state.excludedYears = res.year_exclusion.excluded || [];
+    if (res.excludedYears) state.excludedYears = res.excludedYears;
     if(res.cache_saved === false) {
         showToast("Hinweis: Zwischenspeicherung nicht möglich (Speicherplatz)");
     }
@@ -531,7 +699,7 @@ document.getElementById("settings-open")?.addEventListener("click", loadSettings
 // Treffern aus anderen Jahren - das ist eine Empfehlung, keine Rangliste.
 async function loadTopSongs() {
     // "all" heisst: alles, was der globale Jahresfilter freigibt.
-    const year = "all";
+    const year = document.getElementById("tops-year").value;
     const sort = document.getElementById("tops-sort").value;
     const limit = document.getElementById("tops-limit").value;
     showLoader("Bestenliste wird berechnet...");
@@ -953,8 +1121,8 @@ function renderRecommendations(skipFetch = false) {
 document.getElementById("rec-btn").addEventListener("click", async () => {
     showLoader("Empfehlungen...");
 const data = await apiCall("/recommend", "POST", {
-       year: globalTargetYear(),
-       top_n: parseInt(document.getElementById("rec-topn").value),
+        year: parseInt(document.getElementById("rec-year")?.value || globalTargetYear()),
+        top_n: parseInt(document.getElementById("rec-topn").value),
         min_minutes: parseFloat(document.getElementById("rec-min").value)
     });
     hideLoader();
@@ -1151,7 +1319,7 @@ document.getElementById("comp-btn").addEventListener("click", async () => {
 // ── MODULE: Heatmap ──
 document.getElementById("heat-btn").addEventListener("click", async () => {
 showLoader("Visualisiere Hörzeiten...");
-       const year = "all";
+    const year = document.getElementById("heat-year")?.value || "all";
     const viewMode = document.getElementById("heat-view-mode") ? document.getElementById("heat-view-mode").value : "both";
     const data = await apiCall("/api/heatmap?year=" + year);
     hideLoader();
@@ -1567,7 +1735,7 @@ function renderSkipList() {
 document.getElementById("skip-btn").addEventListener("click", async () => {
     _destroySkipCharts();
     showLoader("Skip-Analyse läuft...");
-    const y = "all";
+    const y = document.getElementById("skip-year").value;
     const m = document.getElementById("skip-min").value;
     const n = document.getElementById("skip-topn")?.value || 30;
 
@@ -1747,7 +1915,7 @@ document.querySelectorAll(".sortable-header").forEach(hdr => {
 let allTimelineData = [];
 
 document.getElementById("disc-btn").addEventListener("click", async () => {
-const year = "all";
+const year = document.getElementById("disc-year").value;
        showLoader(`Analysiere Entdeckungen für ${year === "all" ? "alle Jahre" : year}...`);
     const data = await apiCall("/api/discover?year=" + year);
     hideLoader();
@@ -1914,7 +2082,7 @@ function _destroyMonthlyCharts() {
 async function loadMonthly() {
     _destroyMonthlyCharts();
     showLoader("Lade Monatsdaten...");
-    const data = await apiCall("/api/monthly_v2?year=all");
+    const data = await apiCall("/api/monthly_v2?year=" + document.getElementById("monthly-year").value);
     hideLoader();
     if (!data || data.error || !data.months) return;
 
@@ -2039,7 +2207,8 @@ const CHART_OPTS = {
 async function loadSessions() {
     _destroySessionCharts();
     showLoader("Lade Sessions...");
-    const data = await apiCall("/api/sessions_v2?year=all");
+    const year = document.getElementById("sessions-year")?.value || "all";
+    const data = await apiCall("/api/sessions_v2?year=" + year);
     hideLoader();
     if (!data || data.error) return;
 
@@ -2142,7 +2311,7 @@ async function loadSessions() {
 // ── MODULE: Platforms ──
 async function loadPlatforms() {
     showLoader("Lade...");
-    const data = await apiCall("/api/platforms?year=all");
+    const data = await apiCall("/api/platforms?year=" + document.getElementById("platforms-year").value);
     hideLoader();
     if (data.error || !data.platforms) return;
     
@@ -2253,7 +2422,7 @@ function _renderAlbums() {
 
 async function loadAlbums() {
     showLoader("Lade Alben...");
-    const data = await apiCall("/api/albums?year=all&top_n=50");
+    const data = await apiCall("/api/albums?year=" + (document.getElementById("albums-year").value || "all") + "&top_n=50");
     hideLoader();
     if (data.error) return;
     _albumsData = data;
@@ -2266,7 +2435,7 @@ document.getElementById("albums-sort")?.addEventListener("change", _renderAlbums
 // ── MODULE: Behavior & Loops ──
 document.getElementById("behavior-btn").addEventListener("click", async () => {
     showLoader("Analysiere Hörverhalten & Dauerschleifen...");
-    const year = "all";
+    const year = document.getElementById("behavior-year").value;
     const data = await apiCall("/api/behavior?year=" + year);
     hideLoader();
     if(data.error) return alert("Fehler: " + data.error);
@@ -3237,7 +3406,9 @@ async function checkExistingSession() {
             state.totalStreams = res.total_streams;
             if(res.year_scope) state.yearScope = res.year_scope;
             state.dataLoaded = true;
+            if (res.year_exclusion) renderYearExclusion(res.year_exclusion);
             updateYearSelects();
+            refreshYearDropdowns();
             document.getElementById("upload-section").classList.add("hidden");
             document.getElementById("tab-nav").classList.remove("hidden");
             document.getElementById("panel-recommend").classList.remove("hidden");
@@ -3290,8 +3461,10 @@ window.addEventListener("beforeunload", () => { stopHeartbeat(); });
 
 // Initial renders on startup
 document.addEventListener("DOMContentLoaded", () => {
-    _renderBasket();
-    checkExistingSession().then(startHeartbeat);
+  _renderBasket();
+  bindYearDropdowns();
+  refreshYearDropdowns();
+  checkExistingSession().then(startHeartbeat);
 });
 
 // Also trigger immediately in case DOM is already loaded

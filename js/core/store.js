@@ -20,7 +20,7 @@ let frameAll = null;      // ungeprueft, wie es aus der Datei kam
 let framePreYears = null; // alle Filter AUSSER Jahresfilter - Zaehler fuer die Chips
 let quality = null;       // { outliers, dropped, includeOutliers }
 let meta = { years: [], total: 0, savedAt: null, fileNames: [] };
-let settings = { tz_mode: "utc", profile: "", tz: "", only_music: false, artist_blacklist: [], years: [] };
+let settings = { tz_mode: "utc", profile: "", tz: "", only_music: false, artist_blacklist: [], years: [], years_excluded: [] };
 let media = { music: 0, podcast: 0, audiobook: 0, hidden: 0, total: 0 };
 
 /** Schaltet den Medienfilter um (nur Musik bzw. alles). */
@@ -166,6 +166,83 @@ export function setArtistBlacklist(names) {
 }
 
 /**
+ * Jahre aus den Settings dauerhaft entfernen (years_excluded) - das Gegenstueck
+ * zur Artist-Blacklist, nur fuer Jahrgaenge. Was hier drin steht, ist in ALLEN
+ * Auswertungen weg - auch aus den Jahres-Dropdowns der Tabs. Leere Liste =
+ * nichts ausgeschlossen.
+ */
+function excludedYearKeys() {
+  const out = new Set();
+  for (const y of settings.years_excluded || []) {
+    const n = Number(y);
+    if (Number.isFinite(n)) out.add(n);
+  }
+  return out;
+}
+
+function filterExcludedYears(f) {
+  const banned = excludedYearKeys();
+  if (!banned.size) return f;
+  return f.notInSet("year", banned);
+}
+
+/**
+ * Was schliesst tatsaechlich etwas aus. "excluded" steht im Datensatz,
+ * "unknown" nicht - ein Vertipper beim Jahr soll sichtbar werden.
+ */
+export function getYearExclusion() {
+  const banned = excludedYearKeys();
+  const out = { excluded: [], unknown: [], years_hidden: 0, streams_hidden: 0 };
+  if (!banned.size || !frameAll || !frameAll.has("year")) {
+    out.unknown = Array.from(banned).sort((a, b) => a - b);
+    return out;
+  }
+  const year = frameAll.col("year").data;
+  const counts = new Map();
+  for (let i = 0; i < year.length; i++) {
+    const y = Number(year[i]);
+    if (!Number.isFinite(y)) continue;
+    counts.set(y, (counts.get(y) || 0) + 1);
+  }
+  for (const y of Array.from(banned).sort((a, b) => a - b)) {
+    const n = counts.get(y) || 0;
+    if (n) {
+      out.excluded.push(y);
+      out.years_hidden += 1;
+      out.streams_hidden += n;
+    } else {
+      out.unknown.push(y);
+    }
+  }
+  return out;
+}
+
+/**
+ * Bereinigt die Jahres-Ausschlussliste: ganzzahlig, dedupliziert, aufsteigend
+ * sortiert, hoechstens 40 Eintraege. Gemeinsame Logik fuer setYearsExcluded()
+ * und loadCache().
+ */
+function _cleanExcludedYears(years) {
+  const picked = [];
+  const seen = new Set();
+  for (const y of Array.isArray(years) ? years : []) {
+    const n = Number(y);
+    if (Number.isFinite(n) && !seen.has(n)) {
+      seen.add(n);
+      picked.push(n);
+    }
+  }
+  return picked.slice(0, 40).sort((a, b) => a - b);
+}
+
+/** Setzt die ausgeschlossenen Jahre (leere Liste = nichts raus). */
+export function setYearsExcluded(years) {
+  settings.years_excluded = _cleanExcludedYears(years);
+  rebuildActiveFrame();
+  return { ...settings };
+}
+
+/**
  * Globaler Jahresfilter. Eine leere Liste heisst "alle Jahre" - sonst wird
  * auf genau diese Jahre eingeschraenkt.
  */
@@ -234,9 +311,9 @@ export function setYears(years) {
 
 /**
  * Baut die aktive Ansicht neu auf. Es gibt genau eine Quelle ungefilterter
- * Daten (frameAll) und vier Schalter darauf: auffaellige Zeitstempel,
- * Medienfilter, Artist-Blacklist und Jahresfilter. Deshalb kann nichts
- * verloren gehen.
+ * Daten (frameAll) und fuenf Schalter darauf: auffaellige Zeitstempel,
+ * Medienfilter, Artist-Blacklist, Jahres-Ausschluss (Settings) und
+ * Jahresfilter. Deshalb kann nichts verloren gehen.
  */
 function rebuildActiveFrame() {
   if (!frameAll) return;
@@ -250,6 +327,7 @@ function rebuildActiveFrame() {
     view = view.eq("media", 0).sliceRows(view.rows());
   }
   view = filterBlacklisted(view);
+  view = filterExcludedYears(view);
   view = view.withAliases(aliases);
   framePreYears = view;
   view = filterYears(view);
@@ -503,6 +581,8 @@ export async function loadCache() {
     settings.only_music = !!saved.only_music;
     // Blacklist: getrimmt, dedupliziert, hoechstens 200 - wie setArtistBlacklist.
     settings.artist_blacklist = _cleanBlacklist(saved.artist_blacklist);
+    // Jahres-Ausschluss: ganzzahlig, dedupliziert, sortiert - wie setYearsExcluded.
+    settings.years_excluded = _cleanExcludedYears(saved.years_excluded);
     // Jahre: ganzzahlig, dedupliziert, sortiert, hoechstens 40 - wie setYears.
     settings.years = _cleanYears(saved.years);
     rebuildActiveFrame();

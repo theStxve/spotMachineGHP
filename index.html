@@ -110,6 +110,10 @@
     <div class="tab-panel hidden card" id="panel-recommend">
       <div class="form-row">
         <div class="form-group">
+          <label>Zieljahr</label>
+          <select id="rec-year"></select>
+        </div>
+        <div class="form-group">
           <label>Anzahl Songs</label>
           <input type="number" id="rec-topn" value="20" min="5" />
         </div>
@@ -140,6 +144,10 @@
     <!-- TAB: Top Songs -->
     <div class="tab-panel hidden card" id="panel-topsongs">
       <div class="form-row" style="align-items:flex-end;">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="tops-year"><option value="all">Alle</option></select>
+        </div>
         <div class="form-group">
           <label>Sortieren nach</label>
           <select id="tops-sort">
@@ -201,6 +209,10 @@
     <!-- TAB: Heatmap -->
     <div class="tab-panel hidden card" id="panel-heatmap">
       <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="heat-year"><option value="all">Alle</option></select>
+        </div>
         <div class="form-group">
           <label>Ansichts-Modus</label>
           <select id="heat-view-mode">
@@ -310,6 +322,10 @@
     <div class="tab-panel hidden card" id="panel-skips">
       <div class="form-row" style="align-items:flex-end;">
         <div class="form-group">
+          <label>Jahr</label>
+          <select id="skip-year"><option value="all">Alle</option></select>
+        </div>
+        <div class="form-group">
           <label>Min. Plays</label>
           <input type="number" id="skip-min" value="5" min="1" />
         </div>
@@ -388,6 +404,10 @@
     <!-- TAB: Discover -->
     <div class="tab-panel hidden card" id="panel-discover">
       <div class="form-row">
+        <div class="form-group">
+          <label>Zieljahr</label>
+          <select id="disc-year"></select>
+        </div>
       </div>
       <button id="disc-btn" class="btn btn-primary"><i data-lucide="compass"></i> Entdeckungs-Analyse starten</button>
 
@@ -437,6 +457,10 @@
     <!-- TAB: Monthly -->
     <div class="tab-panel hidden card" id="panel-monthly">
       <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="monthly-year"><option value="all">Alle</option></select>
+        </div>
       </div>
 
       <div id="monthly-results" class="hidden">
@@ -475,6 +499,10 @@
     <!-- TAB: Sessions -->
     <div class="tab-panel hidden card" id="panel-sessions">
       <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="sessions-year"><option value="all">Alle</option></select>
+        </div>
       </div>
 
       <div id="sessions-results" class="hidden">
@@ -517,6 +545,10 @@
     <!-- TAB: Platforms -->
     <div class="tab-panel hidden card" id="panel-platforms">
       <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="platforms-year"><option value="all">Alle</option></select>
+        </div>
       </div>
       <div class="artist-chart-wrap" style="height: 300px; margin: 1rem 0;">
         <canvas id="platforms-chart"></canvas>
@@ -528,6 +560,10 @@
     <!-- TAB: Behavior & Loops -->
     <div class="tab-panel hidden card" id="panel-behavior">
       <div class="form-row">
+        <div class="form-group">
+          <label>Jahr</label>
+          <select id="behavior-year"><option value="all">Alle</option></select>
+        </div>
       </div>
       <button id="behavior-btn" class="btn btn-primary"><i data-lucide="activity"></i> Analysieren</button>
 
@@ -568,9 +604,12 @@
     <!-- TAB: Albums -->
     <div class="tab-panel hidden card" id="panel-albums">
       <div class="form-row" style="align-items:flex-end; gap:0.75rem; flex-wrap:wrap;">
+        <div class="form-group" style="flex:1; min-width:130px;">
+          <label>Jahr</label>
+          <select id="albums-year"><option value="all">Alle</option></select>
+        </div>
         <div class="form-group" style="flex:2; min-width:180px;">
           <label>Suchen / Filtern</label>
-
           <input type="text" id="albums-filter" placeholder="Album oder Artist..." autocomplete="off" />
         </div>
         <div class="form-group" style="flex:1; min-width:130px;">
@@ -934,6 +973,26 @@
           </button>
         </div>
         <div id="blacklist-chips" style="display:flex; flex-wrap:wrap; gap:0.35rem;"></div>
+      </div>
+
+      <!-- Jahres-Ausschluss (global, dauerhaft) -->
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:0.9rem; margin-top:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+          <strong style="font-size:0.9rem;"><i data-lucide="ban" style="width:14px;height:14px;color:#e5534b;"></i> Ausgeschlossene Jahre</strong>
+          <span id="years-excluded-hint" style="font-size:0.72rem; color:var(--muted);"></span>
+        </div>
+        <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.6rem;">
+          Diese Jahrgänge werden dauerhaft aus <strong>allen</strong> Auswertungen herausgenommen — Top Songs,
+          Heatmap, Empfehlungen, Statistiken, Playlist-Builder. Nur Jahre, die in deinen Daten vorkommen,
+          können hinzugefügt werden. Die Liste wird pro Browser gespeichert.
+        </p>
+        <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem;">
+          <input type="number" id="years-excluded-input" min="1900" max="2100" placeholder="Jahr, z.B. 2023, Enter zum Hinzufügen..." style="flex:1;" />
+          <button id="years-excluded-add-btn" class="btn btn-outline" style="flex-shrink:0; padding:0.5rem 0.8rem;">
+            <i data-lucide="plus"></i>
+          </button>
+        </div>
+        <div id="years-excluded-chips" style="display:flex; flex-wrap:wrap; gap:0.35rem;"></div>
       </div>
 
       <!-- Medientyp: Podcasts und Hörbücher ausblenden -->
