@@ -39,7 +39,8 @@ export function analyzeSearches(searches, frame) {
 
     let parsedDt = null;
     if (rawTime) {
-      const ts = Date.parse(rawTime);
+      const cleanTime = String(rawTime || "").split("[")[0].trim();
+      const ts = Date.parse(cleanTime);
       if (Number.isFinite(ts)) {
         parsedDt = new Date(ts);
         const hr = parsedDt.getUTCHours();
@@ -52,7 +53,9 @@ export function analyzeSearches(searches, frame) {
     }
 
     const qLower = q.toLowerCase();
-    queryCounts.set(qLower, (queryCounts.get(qLower) || 0) + 1);
+    if (qLower.length >= 3 && /[a-z0-9]/i.test(qLower)) {
+      queryCounts.set(qLower, (queryCounts.get(qLower) || 0) + 1);
+    }
     platformCounts.set(platform, (platformCounts.get(platform) || 0) + 1);
 
     const fmtTime = parsedDt
@@ -92,8 +95,27 @@ export function analyzeSearches(searches, frame) {
 
   const ghostSearches = [];
   if (knownArtists.size > 0 || knownTracks.size > 0) {
-    for (const item of topQueries.slice(0, 50)) {
+    for (const item of topQueries.slice(0, 60)) {
       if (item.count >= 2 && !knownArtists.has(item.query) && !knownTracks.has(item.query)) {
+        ghostSearches.push(item);
+      }
+    }
+  } else {
+    const zeroClickCounts = new Map();
+    for (let i = 0; i < cleaned.length; i++) {
+      const s = cleaned[i];
+      if (!s.has_interaction) {
+        const ql = s.query.toLowerCase().trim();
+        if (ql.length >= 3 && /[a-z0-9]/i.test(ql)) {
+          zeroClickCounts.set(ql, (zeroClickCounts.get(ql) || 0) + 1);
+        }
+      }
+    }
+    const zeroClickSorted = Array.from(zeroClickCounts.entries())
+      .map(([query, count]) => ({ query, count }))
+      .sort((a, b) => b.count - a.count);
+    for (const item of zeroClickSorted) {
+      if (item.count >= 2) {
         ghostSearches.push(item);
       }
     }
