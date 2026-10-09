@@ -438,6 +438,7 @@ export function get_fuzzy_search(df, query, topN = 25) {
       track: track[i],
       artist: artist[i],
       album: album[i],
+      uri: uri[i] || "",
       play_count: pc,
       total_min: round1(totalMin[i]),
       skip_count: sc,
@@ -559,6 +560,7 @@ export function get_song_stats(df, trackName, artistName) {
     track: real_track,
     artist: real_artist,
     album: real_album,
+    uri: uri || "",
     spotify_url: trackUrl(uri),
     play_count,
     total_min,
@@ -618,9 +620,13 @@ export function get_album_detail(df, albumName, artistName) {
   const plays_by_year = countsToDict(groupCounts(adf, ["year"]));
   const plays_by_month = countsToDict(groupCounts(withYearMonth(adf), ["_ym"]));
 
+  const uCol = adf.has("spotify_track_uri") ? adf.col("spotify_track_uri").data : (adf.has("uri") ? adf.col("uri").data : null);
+  const firstUri = uCol ? (uCol[hit[0]] || "") : "";
+
   return {
     album: alCol[hit[0]],
     artist: aCol[hit[0]],
+    uri: firstUri,
     play_count,
     total_min,
     unique_tracks,

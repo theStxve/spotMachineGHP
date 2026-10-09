@@ -1523,12 +1523,21 @@ document.getElementById("artist-btn").addEventListener("click", async () => {
     hideLoader();
     if(data.error || !data.artist) return alert("Artist nicht gefunden!");
 
+    const artistQueryStr = (data.artist || "").replace(/"/g, '&quot;');
     document.getElementById("artist-header").innerHTML = `
-        <h2 style="font-size:1.6rem; display:flex; align-items:center; gap:0.5rem;">
-            <i data-lucide="mic-2" style="color:var(--green)"></i> ${data.artist}
-        </h2>
-        <span style="color:var(--muted); font-size:0.85rem;">Erstes Mal gestreamt am ${data.first_heard} · Zuletzt gehört am ${data.last_heard}</span>
+        <div style="display:flex; align-items:center; gap:1.25rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+            <div class="cover-box" data-query="${artistQueryStr}" style="width:76px; height:76px; border-radius:50%; background:rgba(29,185,84,0.12); border:2px solid rgba(29,185,84,0.4); display:flex; align-items:center; justify-content:center; font-size:2.2rem; overflow:hidden; flex-shrink:0; box-shadow:0 4px 12px rgba(0,0,0,0.35);">
+                🎤
+            </div>
+            <div>
+                <h2 style="font-size:1.6rem; margin:0 0 0.25rem 0; display:flex; align-items:center; gap:0.5rem;">
+                    ${data.artist}
+                </h2>
+                <span style="color:var(--muted); font-size:0.85rem;">Erstes Mal gestreamt am ${data.first_heard} · Zuletzt gehört am ${data.last_heard}</span>
+            </div>
+        </div>
     `;
+    document.querySelectorAll("#artist-header .cover-box").forEach(el => _loadCoverArt(el));
 
     document.getElementById("artist-stats-grid").innerHTML = `
         <div class="stat-card">
@@ -2377,11 +2386,18 @@ function _renderAlbums() {
     const medalColors = ["#f9c22e", "#aaa", "#cd7f32"];
     document.getElementById("albums-top3").innerHTML = top3.length ? `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-bottom:0.5rem;">
-            ${top3.map((a, i) => `
+            ${top3.map((a, i) => {
+                const qStr = `${a.artist} ${a.album}`.replace(/"/g, "&quot;");
+                return `
                 <div style="background:var(--surface2);border:1px solid ${i===0?'rgba(249,194,46,0.4)':'var(--border)'};border-radius:12px;padding:1rem;cursor:pointer;transition:border-color 0.2s;"
                      onmouseover="this.style.borderColor='${medalColors[i]}40'" onmouseout="this.style.borderColor='${i===0?'rgba(249,194,46,0.4)':'var(--border)'}'"
                      onclick="openAlbumDetail('${a.album.replace(/'/g,"\'")}','${a.artist.replace(/'/g,"\'")}')">
-                    <div style="font-size:1.5rem;margin-bottom:0.3rem;">${medals[i]}</div>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.6rem;">
+                        <span style="font-size:1.5rem;">${medals[i]}</span>
+                        <div class="cover-box" data-uri="${a.uri || ''}" data-query="${qStr}" style="width:58px; height:58px; border-radius:8px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.8rem; overflow:hidden; box-shadow:0 3px 8px rgba(0,0,0,0.35);">
+                            💿
+                        </div>
+                    </div>
                     <div style="font-size:0.95rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.album}</div>
                     <div style="font-size:0.8rem;color:var(--muted);margin:0.2rem 0 0.6rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.artist}</div>
                     <div style="display:flex;justify-content:space-between;font-size:0.8rem;">
@@ -2392,7 +2408,7 @@ function _renderAlbums() {
                         <div style="height:4px;background:${medalColors[i]};border-radius:2px;width:${(a.play_count/maxPlays*100).toFixed(0)}%;"></div>
                     </div>
                 </div>
-            `).join("")}
+            `}).join("")}
         </div>
     ` : "";
 
@@ -2402,11 +2418,15 @@ function _renderAlbums() {
         <div style="display:flex;flex-direction:column;gap:0.3rem;">
             ${rest.map((a, i) => {
                 const barW = Math.max(3, (a.play_count / maxPlays * 100)).toFixed(0);
+                const qStr = `${a.artist} ${a.album}`.replace(/"/g, "&quot;");
                 return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.55rem 0.7rem;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:all 0.15s;"
                      onmouseover="this.style.background='var(--surface2)';this.style.borderColor='var(--border)'" 
                      onmouseout="this.style.background='';this.style.borderColor='transparent'"
                      onclick="openAlbumDetail('${a.album.replace(/'/g,"\'")}','${a.artist.replace(/'/g,"\'")}')">
                     <span style="font-size:0.72rem;color:var(--muted);min-width:24px;text-align:right;">#${i+4}</span>
+                    <div class="cover-box" data-uri="${a.uri || ''}" data-query="${qStr}" style="width:38px; height:38px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden; flex-shrink:0; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
+                        💿
+                    </div>
                     <div style="flex:1;min-width:0;">
                         <div style="display:flex;align-items:baseline;gap:0.4rem;">
                             <strong style="font-size:0.9rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.album}</strong>
@@ -2426,6 +2446,7 @@ function _renderAlbums() {
         </div>
     ` : (data.length <= 3 && data.length > 0 ? "" : `<p style="color:var(--muted);font-size:0.85rem;text-align:center;padding:1rem 0;">Keine Alben gefunden.</p>`);
 
+    document.querySelectorAll("#panel-albums .cover-box").forEach(el => _loadCoverArt(el));
     lucide.createIcons();
 }
 
@@ -2571,7 +2592,8 @@ async function openSongDetail(track, artist) {
     _destroySongCharts();
     const modal = document.getElementById("song-detail-modal");
     document.getElementById("song-modal-title").textContent = track;
-    document.getElementById("song-modal-artist").innerHTML = `<span style="color:var(--muted);">von</span> <strong style="color:var(--text);">${artist}</strong>`;
+    const safeA = (artist || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    document.getElementById("song-modal-artist").innerHTML = `<span style="color:var(--muted);">von</span> <strong style="color:var(--text); cursor:pointer;" onclick="_closeSongModal(); searchArtist('${safeA}')" title="Zu ${artist} springen">${artist} <i data-lucide="arrow-right" style="width:11px;height:11px;vertical-align:middle;opacity:0.5;"></i></strong>`;
     document.getElementById("song-modal-body").innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;padding:3rem 0;color:var(--muted);">
             <div class="spinner" style="width:32px;height:32px;border-width:2px;"></div>
@@ -2600,16 +2622,27 @@ async function openSongDetail(track, artist) {
            </div>`
         : "";
 
+    const songQueryStr = `${data.artist} ${data.track}`.replace(/"/g, '&quot;');
     document.getElementById("song-modal-body").innerHTML = `
-        <!-- Album badge + links -->
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid var(--border);">
-            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                ${data.album ? `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--muted);padding:0.25rem 0.6rem;display:inline-flex;align-items:center;gap:0.3rem;">
-                    <i data-lucide="disc" style="width:11px;height:11px;"></i> ${data.album}</span>` : ""}
-                <span style="font-size:0.78rem;color:var(--muted);">Erstmals: <strong style="color:var(--text);">${data.first_played}</strong></span>
-                <span style="font-size:0.78rem;color:var(--muted);">Zuletzt: <strong style="color:var(--text);">${data.last_played}</strong></span>
+        <!-- Header with big cover art -->
+        <div style="display:flex; gap:1.2rem; align-items:center; margin-bottom:1.25rem; padding-bottom:1rem; border-bottom:1px solid var(--border); flex-wrap:wrap;">
+            <div class="cover-box" data-uri="${data.uri || ''}" data-query="${songQueryStr}" style="width:84px; height:84px; border-radius:10px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:2.2rem; overflow:hidden; flex-shrink:0; box-shadow:0 4px 12px rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08);">
+                🎵
             </div>
-            ${spotifyBtn}
+            <div style="flex:1; min-width:180px;">
+                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.4rem;">
+                    ${data.album ? `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--muted);padding:0.25rem 0.6rem;display:inline-flex;align-items:center;gap:0.3rem;">
+                        <i data-lucide="disc" style="width:11px;height:11px;"></i> ${data.album}</span>` : ""}
+                    <span style="font-size:0.78rem;color:var(--muted);">Erstmals: <strong style="color:var(--text);">${data.first_played}</strong></span>
+                    <span style="font-size:0.78rem;color:var(--muted);">Zuletzt: <strong style="color:var(--text);">${data.last_played}</strong></span>
+                </div>
+                <div style="font-size:0.85rem; color:var(--green); font-weight:600; cursor:pointer;" onclick="_closeSongModal(); searchArtist('${safeA}')" title="Zu ${data.artist} springen">
+                    <i data-lucide="mic-2" style="width:13px;height:13px;vertical-align:middle;"></i> Mehr von ${data.artist} <i data-lucide="arrow-right" style="width:12px;height:12px;vertical-align:middle;"></i>
+                </div>
+            </div>
+            <div>
+                ${spotifyBtn}
+            </div>
         </div>
 
         <!-- Hero stats row -->
@@ -2682,6 +2715,7 @@ async function openSongDetail(track, artist) {
         </div>` : ""}
     `;
 
+    modal.querySelectorAll(".cover-box").forEach(el => _loadCoverArt(el));
     lucide.createIcons();
 
     // Render Year Chart
@@ -2800,7 +2834,8 @@ async function openAlbumDetail(album, artist) {
     _destroyAlbumCharts();
     const modal = document.getElementById("album-detail-modal");
     document.getElementById("album-modal-title").textContent = album;
-    document.getElementById("album-modal-artist").innerHTML = `<span style="color:var(--muted);">von</span> <strong style="color:var(--text);">${artist}</strong>`;
+    const safeAlbumArtist = (artist || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    document.getElementById("album-modal-artist").innerHTML = `<span style="color:var(--muted);">von</span> <strong style="color:var(--text); cursor:pointer;" onclick="document.getElementById('album-detail-modal').classList.add('hidden'); searchArtist('${safeAlbumArtist}')" title="Zu ${artist} springen">${artist} <i data-lucide="arrow-right" style="width:11px;height:11px;vertical-align:middle;opacity:0.5;"></i></strong>`;
     document.getElementById("album-modal-body").innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;padding:3rem 0;color:var(--muted);">
             <div class="spinner" style="width:32px;height:32px;border-width:2px;"></div>
@@ -2816,14 +2851,23 @@ async function openAlbumDetail(album, artist) {
 
     const skipColor = data.skip_rate > 60 ? '#e5534b' : data.skip_rate > 35 ? '#f9c22e' : 'var(--green)';
     const maxPlays = Math.max(...(data.tracks||[]).map(t => t.play_count), 1);
+    const albumQueryStr = `${data.artist} ${data.album}`.replace(/"/g, '&quot;');
 
     document.getElementById("album-modal-body").innerHTML = `
-        <!-- Meta row -->
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid var(--border);">
-            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;font-size:0.78rem;color:var(--muted);">
-                <span>Erstmals: <strong style="color:var(--text);">${data.first_played}</strong></span>
-                <span>Zuletzt: <strong style="color:var(--text);">${data.last_played}</strong></span>
-                <span><strong style="color:var(--text);">${data.unique_tracks}</strong> Tracks</span>
+        <!-- Header with big cover art -->
+        <div style="display:flex; gap:1.2rem; align-items:center; margin-bottom:1.25rem; padding-bottom:1rem; border-bottom:1px solid var(--border); flex-wrap:wrap;">
+            <div class="cover-box" data-uri="${data.uri || ''}" data-query="${albumQueryStr}" style="width:84px; height:84px; border-radius:10px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:2.2rem; overflow:hidden; flex-shrink:0; box-shadow:0 4px 12px rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08);">
+                💿
+            </div>
+            <div style="flex:1; min-width:180px;">
+                <div style="display:flex; gap:0.6rem; flex-wrap:wrap; font-size:0.78rem; color:var(--muted); margin-bottom:0.4rem;">
+                    <span>Erstmals: <strong style="color:var(--text);">${data.first_played}</strong></span>
+                    <span>Zuletzt: <strong style="color:var(--text);">${data.last_played}</strong></span>
+                    <span><strong style="color:var(--text);">${data.unique_tracks}</strong> Tracks</span>
+                </div>
+                <div style="font-size:0.85rem; color:var(--green); font-weight:600; cursor:pointer;" onclick="document.getElementById('album-detail-modal').classList.add('hidden'); searchArtist('${safeAlbumArtist}')" title="Zu ${artist} springen">
+                    <i data-lucide="mic-2" style="width:13px;height:13px;vertical-align:middle;"></i> Mehr von ${artist} <i data-lucide="arrow-right" style="width:12px;height:12px;vertical-align:middle;"></i>
+                </div>
             </div>
         </div>
 
@@ -2882,6 +2926,7 @@ async function openAlbumDetail(album, artist) {
         </div>
     `;
 
+    modal.querySelectorAll(".cover-box").forEach(el => _loadCoverArt(el));
     lucide.createIcons();
 
     // Year chart
@@ -2964,22 +3009,33 @@ async function runSearch(q) {
     }
     resultsEl.innerHTML = `
         <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.75rem;">${data.length} Songs gefunden — klicke einen an für alle Details</div>
-        ${data.map((s) => `
-            <div class="search-result-row" onclick="openSongDetail('${s.track.replace(/'/g,"\\'").replace(/"/g,"&quot;")}','${s.artist.replace(/'/g,"\\'").replace(/"/g,"&quot;")}')">
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:0.7rem 0.9rem; border-bottom:1px solid var(--border); cursor:pointer; border-radius:6px; transition:background 0.15s;">
-                    <div style="overflow:hidden; margin-right:0.5rem;">
-                        <strong style="color:var(--text); font-size:0.95rem;">${s.track}</strong><br>
-                        <span style="color:var(--muted); font-size:0.82rem;">${s.artist}</span>
-                        ${s.album ? `<span style="color:var(--border); font-size:0.78rem;"> · ${s.album}</span>` : ""}
+        ${data.map((s) => {
+            const safeTrack = (s.track || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+            const safeArtist = (s.artist || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+            const qStr = `${s.artist} ${s.track}`.replace(/"/g, "&quot;");
+            return `
+            <div class="search-result-row" onclick="openSongDetail('${safeTrack}','${safeArtist}')">
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:0.65rem 0.85rem; border-bottom:1px solid var(--border); cursor:pointer; border-radius:8px; transition:background 0.15s; gap:0.85rem;">
+                    <div class="cover-box" data-uri="${s.uri || ''}" data-query="${qStr}" style="width:44px; height:44px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden; font-size:1.2rem; box-shadow:0 2px 5px rgba(0,0,0,0.3);">
+                        🎵
+                    </div>
+                    <div style="overflow:hidden; flex:1; min-width:0;">
+                        <strong style="color:var(--text); font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">${s.track}</strong>
+                        <div style="color:var(--muted); font-size:0.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            <span>${s.artist}</span>
+                            ${s.album ? `<span style="opacity:0.6;"> · ${s.album}</span>` : ""}
+                        </div>
                     </div>
                     <div style="text-align:right; white-space:nowrap; flex-shrink:0;">
-                        <span style="color:var(--green); font-weight:600; font-size:0.9rem;">${s.play_count}x</span><br>
-                        <span style="color:var(--muted); font-size:0.78rem;">${s.total_min} min · Skip: ${s.skip_rate}%</span>
+                        <span style="color:var(--green); font-weight:700; font-size:0.9rem;">${s.play_count}x</span><br>
+                        <span style="color:var(--muted); font-size:0.75rem;">${s.total_min} min · Skip: ${s.skip_rate}%</span>
                     </div>
                 </div>
             </div>
-        `).join("")}
+        `}).join("")}
     `;
+    resultsEl.querySelectorAll(".cover-box").forEach(el => _loadCoverArt(el));
+    lucide.createIcons();
 }
 
 // ── MODULE: Playlist-Builder & Mix-Generator ──
@@ -3867,28 +3923,53 @@ let _libraryArtistsChart = null;
 const _coverArtCache = new Map();
 
 async function _loadCoverArt(el) {
+  if (!el) return;
   const uri = el.getAttribute("data-uri");
-  if (!uri || !uri.startsWith("spotify:")) return;
-  const parts = uri.split(":");
-  const type = parts[1];
-  const id = parts[2];
-  if (!id || (type !== "track" && type !== "album" && type !== "artist")) return;
+  const query = el.getAttribute("data-query");
+  const cacheKey = (uri && uri.startsWith("spotify:")) ? uri : (query || "");
+  if (!cacheKey) return;
 
-  if (_coverArtCache.has(uri)) {
-    const url = _coverArtCache.get(uri);
-    if (url) el.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover; border-radius:6px;" alt="" />`;
+  if (_coverArtCache.has(cacheKey)) {
+    const url = _coverArtCache.get(cacheKey);
+    if (url) el.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;" alt="" loading="lazy" />`;
     return;
   }
 
-  try {
-    const res = await fetch(`https://open.spotify.com/oembed?url=https://open.spotify.com/${type}/${id}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.thumbnail_url) {
-      _coverArtCache.set(uri, data.thumbnail_url);
-      el.innerHTML = `<img src="${data.thumbnail_url}" style="width:100%; height:100%; object-fit:cover; border-radius:6px;" alt="" />`;
+  // 1. Offizieller Spotify oEmbed-Thumbnail (CORS-offen, kein Key nötig)
+  if (uri && uri.startsWith("spotify:")) {
+    const parts = uri.split(":");
+    const type = parts[1];
+    const id = parts[2];
+    if (id && (type === "track" || type === "album" || type === "artist")) {
+      try {
+        const res = await fetch(`https://open.spotify.com/oembed?url=https://open.spotify.com/${type}/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.thumbnail_url) {
+            _coverArtCache.set(cacheKey, data.thumbnail_url);
+            el.innerHTML = `<img src="${data.thumbnail_url}" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;" alt="" loading="lazy" />`;
+            return;
+          }
+        }
+      } catch (e) {}
     }
-  } catch (e) {}
+  }
+
+  // 2. iTunes Search API Fallback (CORS-offen, kein Key nötig, hochauflösend)
+  if (query) {
+    try {
+      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=1`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results && data.results.length > 0 && data.results[0].artworkUrl100) {
+          const highRes = data.results[0].artworkUrl100.replace("/100x100bb.jpg", "/300x300bb.jpg");
+          _coverArtCache.set(cacheKey, highRes);
+          el.innerHTML = `<img src="${highRes}" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;" alt="" loading="lazy" />`;
+          return;
+        }
+      }
+    } catch (e) {}
+  }
 }
 
 function _renderGraveyardTable(filter = "") {
@@ -3907,15 +3988,19 @@ function _renderGraveyardTable(filter = "") {
     return;
   }
 
-  tbody.innerHTML = list.slice(0, 100).map(t => `
-    <tr>
+  tbody.innerHTML = list.slice(0, 100).map(t => {
+    const safeTrack = (t.track || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    const safeArtist = (t.artist || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    const qStr = `${t.artist} ${t.track}`.replace(/"/g, "&quot;");
+    return `
+    <tr style="cursor:pointer;" onclick="openSongDetail('${safeTrack}','${safeArtist}')" title="Klicke für Song-Details">
       <td style="width:50px;">
-        <div class="cover-box" data-uri="${t.uri || ''}" style="width:36px; height:36px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden;">
+        <div class="cover-box" data-uri="${t.uri || ''}" data-query="${qStr}" style="width:38px; height:38px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
           💿
         </div>
       </td>
       <td style="font-weight:600; color:var(--text);">${t.track}</td>
-      <td style="color:var(--muted);">${t.artist}</td>
+      <td style="color:var(--muted); cursor:pointer;" onclick="event.stopPropagation(); searchArtist('${safeArtist}');" title="Zu ${t.artist}">${t.artist}</td>
       <td style="color:var(--muted); font-size:0.76rem;">${t.album || "-"}</td>
       <td>
         <span style="display:inline-block; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; font-weight:600; ${t.streams === 0 ? "background:rgba(229,83,75,0.15); color:#e5534b;" : "background:rgba(255,193,7,0.15); color:#ffc107;"}">
@@ -3923,9 +4008,9 @@ function _renderGraveyardTable(filter = "") {
         </span>
       </td>
     </tr>
-  `).join("");
+  `}).join("");
 
-  tbody.querySelectorAll(".cover-box[data-uri]").forEach(el => _loadCoverArt(el));
+  tbody.querySelectorAll(".cover-box").forEach(el => _loadCoverArt(el));
 }
 
 function _renderGhosthitsTable(filter = "") {
@@ -3944,20 +4029,24 @@ function _renderGhosthitsTable(filter = "") {
     return;
   }
 
-  tbody.innerHTML = list.slice(0, 50).map(t => `
-    <tr>
+  tbody.innerHTML = list.slice(0, 50).map(t => {
+    const safeTrack = (t.track || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    const safeArtist = (t.artist || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    const qStr = `${t.artist} ${t.track}`.replace(/"/g, "&quot;");
+    return `
+    <tr style="cursor:pointer;" onclick="openSongDetail('${safeTrack}','${safeArtist}')" title="Klicke für Song-Details">
       <td style="width:50px;">
-        <div class="cover-box" data-uri="${t.uri || ''}" style="width:36px; height:36px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden;">
+        <div class="cover-box" data-uri="${t.uri || ''}" data-query="${qStr}" style="width:38px; height:38px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
           🎵
         </div>
       </td>
       <td style="font-weight:600; color:var(--text);">${t.track}</td>
-      <td style="color:var(--muted);">${t.artist}</td>
+      <td style="color:var(--muted); cursor:pointer;" onclick="event.stopPropagation(); searchArtist('${safeArtist}');" title="Zu ${t.artist}">${t.artist}</td>
       <td><strong style="color:var(--green);">${t.streams}</strong> Streams</td>
     </tr>
-  `).join("");
+  `}).join("");
 
-  tbody.querySelectorAll(".cover-box[data-uri]").forEach(el => _loadCoverArt(el));
+  tbody.querySelectorAll(".cover-box").forEach(el => _loadCoverArt(el));
 }
 
 async function loadLibraryTab() {
@@ -4038,6 +4127,12 @@ async function loadLibraryTab() {
             indexAxis: "y",
             responsive: true,
             maintainAspectRatio: false,
+            onClick: (e, elements) => {
+              if (elements && elements.length) {
+                const a = top10[elements[0].index].artist;
+                searchArtist(a);
+              }
+            },
             plugins: { legend: { display: false } },
             scales: {
               x: { ticks: { color: "#888" }, grid: { color: "rgba(255,255,255,0.05)" } },
@@ -4145,14 +4240,20 @@ async function loadMarqueeTab() {
     const inactEl = document.getElementById("marquee-inactive");
     if (inactEl) inactEl.textContent = (data.inactive_count || 0).toLocaleString();
 
-    // Super Listeners Chips
+    // Super Listeners Chips - Klick führt direkt zur Artist-Detailseite!
     const chipsEl = document.getElementById("marquee-super-chips");
     if (chipsEl) {
-      chipsEl.innerHTML = (data.super_listeners || []).map(a => `
-        <span class="tag-pill" style="font-size:0.8rem; padding:0.3rem 0.65rem; background:rgba(29,185,84,0.15); border-color:var(--green); color:var(--text); font-weight:600;">
-          🌟 ${a}
+      chipsEl.innerHTML = (data.super_listeners || []).map(a => {
+        const safeA = a.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+        return `
+        <span class="tag-pill" style="font-size:0.82rem; padding:0.35rem 0.75rem; background:rgba(29,185,84,0.15); border:1px solid rgba(29,185,84,0.45); color:var(--text); font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem; transition:all 0.15s ease;"
+              onmouseover="this.style.background='rgba(29,185,84,0.3)'; this.style.borderColor='var(--green)'; this.style.transform='translateY(-1px)';"
+              onmouseout="this.style.background='rgba(29,185,84,0.15)'; this.style.borderColor='rgba(29,185,84,0.45)'; this.style.transform='none';"
+              onclick="searchArtist('${safeA}')"
+              title="Klicke, um ${a} in den Artist-Details zu öffnen">
+          🌟 ${a} <i data-lucide="arrow-right" style="width:12px;height:12px;opacity:0.6;"></i>
         </span>
-      `).join("");
+      `}).join("");
     }
 
     // Chart
@@ -4236,16 +4337,21 @@ function _renderMarqueeTable() {
     "Previously Active Listeners": "background:rgba(255,159,67,0.15); color:#ff9f43;",
   };
 
-  tbody.innerHTML = list.slice(0, 150).map(item => `
+  tbody.innerHTML = list.slice(0, 150).map(item => {
+    const safeA = item.artist.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    return `
     <tr>
-      <td style="font-weight:600; color:var(--text);">${item.artist}</td>
+      <td style="font-weight:600; color:var(--text); cursor:pointer;" onclick="searchArtist('${safeA}')" title="Zu ${item.artist} springen">
+        ${item.artist} <i data-lucide="arrow-right" style="width:11px;height:11px;opacity:0.4;vertical-align:middle;margin-left:3px;"></i>
+      </td>
       <td>
         <span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.74rem; font-weight:600; ${segmentColors[item.segment] || 'background:rgba(255,255,255,0.06); color:var(--muted);'}">
           ${item.segment}
         </span>
       </td>
     </tr>
-  `).join("");
+  `}).join("");
+  lucide.createIcons();
 }
 
 // ── 5. PROFIL & FOLLOWER TAB ──

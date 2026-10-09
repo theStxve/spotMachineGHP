@@ -582,12 +582,15 @@ export function get_album_stats(df, year, topN) {
   const playCount = g.count("ts");
   const totalMinutes = g.sum("minutes_played");
   const uniqueTracks = g.nunique("song_id");
+  const uriColName = df.has("spotify_track_uri") ? "spotify_track_uri" : (df.has("uri") ? "uri" : null);
+  const uriList = uriColName ? g.first(uriColName) : null;
 
   const recs = [];
   for (let i = 0; i < g.size; i++) {
     recs.push({
       album: g.keyArrays[i][0],
       artist: g.keyArrays[i][1],
+      uri: uriList ? (uriList[i] || "") : "",
       play_count: playCount[i],
       total_minutes: totalMinutes[i],
       unique_tracks: uniqueTracks[i],

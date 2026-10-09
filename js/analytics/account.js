@@ -251,6 +251,17 @@ export function analyzeLibrary(library, frame) {
       playCounts.set(sid, (playCounts.get(sid) || 0) + 1);
     }
 
+    // Map URIs aus Frame falls vorhanden
+    const uriMap = new Map();
+    if (frame && frame.has && (frame.has("uri") || frame.has("spotify_track_uri"))) {
+      const uCol = frame.has("spotify_track_uri") ? frame.col("spotify_track_uri").data : frame.col("uri").data;
+      for (let i = 0; i < songIds.length; i++) {
+        if (uCol[i] && !uriMap.has(songIds[i])) {
+          uriMap.set(songIds[i], uCol[i]);
+        }
+      }
+    }
+
     // Friedhof
     for (const it of tracks) {
       const sid = it.artist.toLowerCase().trim() + " — " + it.track.toLowerCase().trim();
@@ -260,6 +271,7 @@ export function analyzeLibrary(library, frame) {
           artist: it.artist,
           track: it.track,
           album: it.album,
+          uri: it.uri || uriMap.get(sid) || "",
           streams: cnt,
           status: cnt === 0 ? "Nie gehört" : "Nur 1x gehört",
         });
@@ -274,11 +286,24 @@ export function analyzeLibrary(library, frame) {
         ghostHits.push({
           artist: parts[0] || "",
           track: parts[1] || "",
+          uri: uriMap.get(sid) || "",
           streams: cnt,
         });
       }
     }
     ghostHits.sort((a, b) => b.streams - a.streams);
+  } else {
+    for (let i = 0; i < Math.min(tracks.length, 100); i++) {
+      const it = tracks[i];
+      graveyard.push({
+        artist: it.artist,
+        track: it.track,
+        album: it.album,
+        uri: it.uri || "",
+        streams: 0,
+        status: "In Bibliothek",
+      });
+    }
   }
 
   const topArtists = Array.from(artistCounts.entries())
