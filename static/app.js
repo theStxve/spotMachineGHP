@@ -76,7 +76,6 @@ function refreshYearDropdowns() {
       }
     }
   }
-  updateYearSelects();
 }
 
 // Pro Tab ein Change-Handler: Wenn der Nutzer im Tab ein Jahr auswählt, wird dieser Tab aktualisiert
@@ -177,6 +176,7 @@ async function loadArtists() {
  * Auswahl. Die Vergleichs-Dropdowns bekommen nur noch die sichtbaren Jahre.
  */
 function updateYearSelects() {
+    refreshYearDropdowns();
     const scope = state.yearScope || { selected: state.years, all: true, counts: {} };
     const pool = scope.all ? state.years : scope.selected;
     const opts = pool.map(y => `<option value="${y}">${y}</option>`).join("");
