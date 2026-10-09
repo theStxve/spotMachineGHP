@@ -3706,36 +3706,18 @@ async function loadInferencesTab() {
     if (payData && payData.loaded) {
       if (paySec) paySec.classList.remove("hidden");
       const totSpentEl = document.getElementById("payments-total-spent");
-      if (totSpentEl) {
-        if (payData.only_merch) {
-          totSpentEl.innerHTML = `${payData.total_spent} ${payData.currency} <span style="font-size:0.75rem; color:var(--muted); font-weight:normal;">(Reines Merch / 0 € Abo)</span>`;
-        } else {
-          totSpentEl.textContent = `${payData.total_spent} ${payData.currency}`;
-        }
-      }
+      if (totSpentEl) totSpentEl.textContent = `${payData.total_spent} ${payData.currency}`;
+
       const validHour = typeof payData.cost_per_hour === "number" && !isNaN(payData.cost_per_hour);
       const hrRateEl = document.getElementById("payments-hour-rate");
-      if (hrRateEl) {
-        if (validHour) {
-          hrRateEl.textContent = `${payData.cost_per_hour} ${payData.currency} / h`;
-          if (payData.only_merch) hrRateEl.title = "Merch-Kauf umgerechnet auf gesamte Streaming-Stunden";
-        } else {
-          hrRateEl.textContent = "-";
-        }
-      }
+      if (hrRateEl) hrRateEl.textContent = validHour ? `${payData.cost_per_hour} ${payData.currency} / h` : "-";
 
       const validStream = typeof payData.cost_per_stream_cents === "number" && !isNaN(payData.cost_per_stream_cents);
       const stRateEl = document.getElementById("payments-stream-rate");
       if (stRateEl) stRateEl.textContent = validStream ? `${payData.cost_per_stream_cents} Cent / Stream` : "-";
 
       const costHourEl = document.getElementById("inferences-cost-per-hour");
-      if (costHourEl) {
-        if (validHour) {
-          costHourEl.textContent = `${payData.cost_per_hour} ${payData.currency} / h` + (payData.only_merch ? " (Merch)" : "");
-        } else {
-          costHourEl.textContent = "-";
-        }
-      }
+      if (costHourEl) costHourEl.textContent = validHour ? `${payData.cost_per_hour} ${payData.currency} / h` : "-";
 
       // Süße Merch-Liste
       const merchBox = document.getElementById("payments-merch-box");
