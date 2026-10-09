@@ -211,16 +211,34 @@ export async function handleRequest(method, url, body, query) {
     const frame = hasData() ? getFrame() : null;
     const res = analyzePayments(getAccountData().payments, frame);
     const purchases = getAccountData().purchases || [];
+    let totalHours = 0;
+    let totalStreams = 0;
+    if (frame && frame.has && frame.has("minutes_played")) {
+      const mins = frame.col("minutes_played").data;
+      let totalMins = 0;
+      for (let i = 0; i < mins.length; i++) totalMins += mins[i];
+      totalHours = totalMins / 60;
+      totalStreams = frame.n || 0;
+    }
     if (purchases.length) {
       const pRes = analyzePurchases(purchases);
       res.has_purchases = true;
       res.merch_spent = pRes.total_spent;
       res.merch_orders = pRes.orders;
+      res.merch_items = pRes.items;
       res.merch_currency = pRes.currency;
       if (!res.loaded) {
+        const costPerHour = totalHours > 0 ? Math.round((pRes.total_spent / totalHours) * 100) / 100 : 0;
+        const costPerStream = totalStreams > 0 ? Math.round((pRes.total_spent / totalStreams) * 10000) / 100 : 0;
         res.loaded = true;
         res.total_spent = pRes.total_spent;
         res.currency = pRes.currency;
+        res.cost_per_hour = costPerHour;
+        res.cost_per_stream_cents = costPerStream;
+        res.total_hours = Math.round(totalHours * 10) / 10;
+        res.total_streams = totalStreams;
+        res.only_merch = true;
+        res.payments = [];
       }
     }
     return res;

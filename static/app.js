@@ -3706,13 +3706,59 @@ async function loadInferencesTab() {
     if (payData && payData.loaded) {
       if (paySec) paySec.classList.remove("hidden");
       const totSpentEl = document.getElementById("payments-total-spent");
-      if (totSpentEl) totSpentEl.textContent = `${payData.total_spent} ${payData.currency}`;
+      if (totSpentEl) {
+        if (payData.only_merch) {
+          totSpentEl.innerHTML = `${payData.total_spent} ${payData.currency} <span style="font-size:0.75rem; color:var(--muted); font-weight:normal;">(Reines Merch / 0 € Abo)</span>`;
+        } else {
+          totSpentEl.textContent = `${payData.total_spent} ${payData.currency}`;
+        }
+      }
+      const validHour = typeof payData.cost_per_hour === "number" && !isNaN(payData.cost_per_hour);
       const hrRateEl = document.getElementById("payments-hour-rate");
-      if (hrRateEl) hrRateEl.textContent = payData.cost_per_hour !== null ? `${payData.cost_per_hour} € / h` : "-";
+      if (hrRateEl) {
+        if (validHour) {
+          hrRateEl.textContent = `${payData.cost_per_hour} ${payData.currency} / h`;
+          if (payData.only_merch) hrRateEl.title = "Merch-Kauf umgerechnet auf gesamte Streaming-Stunden";
+        } else {
+          hrRateEl.textContent = "-";
+        }
+      }
+
+      const validStream = typeof payData.cost_per_stream_cents === "number" && !isNaN(payData.cost_per_stream_cents);
       const stRateEl = document.getElementById("payments-stream-rate");
-      if (stRateEl) stRateEl.textContent = payData.cost_per_stream_cents !== null ? `${payData.cost_per_stream_cents} Cent / Stream` : "-";
+      if (stRateEl) stRateEl.textContent = validStream ? `${payData.cost_per_stream_cents} Cent / Stream` : "-";
+
       const costHourEl = document.getElementById("inferences-cost-per-hour");
-      if (costHourEl) costHourEl.textContent = payData.cost_per_hour !== null ? `${payData.cost_per_hour} € / h` : "-";
+      if (costHourEl) {
+        if (validHour) {
+          costHourEl.textContent = `${payData.cost_per_hour} ${payData.currency} / h` + (payData.only_merch ? " (Merch)" : "");
+        } else {
+          costHourEl.textContent = "-";
+        }
+      }
+
+      // Süße Merch-Liste
+      const merchBox = document.getElementById("payments-merch-box");
+      const merchList = document.getElementById("payments-merch-list");
+      const merchBadge = document.getElementById("payments-merch-badge");
+      if (merchBox && merchList && payData.merch_items && payData.merch_items.length) {
+        merchBox.classList.remove("hidden");
+        if (merchBadge) merchBadge.textContent = `${payData.merch_items.length} Artikel (${payData.merch_spent} ${payData.merch_currency})`;
+        merchList.innerHTML = payData.merch_items.map(item => `
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0.75rem; display:flex; align-items:center; gap:0.75rem;">
+            <div style="font-size:1.6rem; line-height:1; flex-shrink:0;">💿</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-weight:600; color:var(--text); font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.title}">${item.title}</div>
+              <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--muted); margin-top:0.25rem;">
+                <span style="color:var(--green); font-weight:700;">${item.amount} ${item.currency}</span>
+                <span>${item.date || 'Bestellung'} · <span style="color:#5b8def;">Erfüllt &amp; Bezahlt</span></span>
+              </div>
+            </div>
+          </div>
+        `).join("");
+      } else if (merchBox) {
+        merchBox.classList.add("hidden");
+      }
     } else {
       if (paySec) paySec.classList.add("hidden");
       const costHourEl = document.getElementById("inferences-cost-per-hour");
@@ -3747,12 +3793,19 @@ function _renderInferencesCategories(categories, filter = "") {
           <strong style="font-size:0.95rem; color:var(--text);">${cat.category}</strong>
           <span style="font-size:0.75rem; color:var(--muted);">${matchingTags.length} Tags</span>
         </div>
-        <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
-          ${matchingTags.map(t => `
-            <span class="tag-pill" style="font-size:0.78rem; padding:0.25rem 0.55rem; background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12);">
-              ${t}
-            </span>
-          `).join("")}
+        <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+          ${matchingTags.map(t => {
+            let explanation = "";
+            if (t.includes("On Repeat_Sponsored Playlist Audience")) {
+              explanation = '<span style="display:block; font-size:0.72rem; color:var(--muted); margin-top:0.25rem;">Regelmäßiger Hörer von „On Repeat" · Zielgruppe für gesponserte Playlists</span>';
+            }
+            return `
+              <div class="tag-pill" style="font-size:0.8rem; padding:0.35rem 0.65rem; background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12); display:inline-block;">
+                <span style="font-weight:600; color:var(--text);">${t}</span>
+                ${explanation}
+              </div>
+            `;
+          }).join("")}
         </div>
       </div>
     `;
@@ -3771,6 +3824,104 @@ document.getElementById("inferences-tag-search")?.addEventListener("input", (e) 
 
 
 // ── 3. BIBLIOTHEK & PLAYLISTS TAB ──
+let _libraryActivityChart = null;
+let _libraryArtistsChart = null;
+const _coverArtCache = new Map();
+
+async function _loadCoverArt(el) {
+  const uri = el.getAttribute("data-uri");
+  if (!uri || !uri.startsWith("spotify:")) return;
+  const parts = uri.split(":");
+  const type = parts[1];
+  const id = parts[2];
+  if (!id || (type !== "track" && type !== "album" && type !== "artist")) return;
+
+  if (_coverArtCache.has(uri)) {
+    const url = _coverArtCache.get(uri);
+    if (url) el.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover; border-radius:6px;" alt="" />`;
+    return;
+  }
+
+  try {
+    const res = await fetch(`https://open.spotify.com/oembed?url=https://open.spotify.com/${type}/${id}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.thumbnail_url) {
+      _coverArtCache.set(uri, data.thumbnail_url);
+      el.innerHTML = `<img src="${data.thumbnail_url}" style="width:100%; height:100%; object-fit:cover; border-radius:6px;" alt="" />`;
+    }
+  } catch (e) {}
+}
+
+function _renderGraveyardTable(filter = "") {
+  if (!_libraryRawData || !_libraryRawData.graveyard_tracks) return;
+  const tbody = document.getElementById("library-graveyard-tbody");
+  if (!tbody) return;
+
+  const fLower = filter.toLowerCase().trim();
+  let list = _libraryRawData.graveyard_tracks;
+  if (fLower) {
+    list = list.filter(t => t.track.toLowerCase().includes(fLower) || t.artist.toLowerCase().includes(fLower) || (t.album && t.album.toLowerCase().includes(fLower)));
+  }
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine passenden Friedhof-Songs gefunden.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.slice(0, 100).map(t => `
+    <tr>
+      <td style="width:50px;">
+        <div class="cover-box" data-uri="${t.uri || ''}" style="width:36px; height:36px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden;">
+          💿
+        </div>
+      </td>
+      <td style="font-weight:600; color:var(--text);">${t.track}</td>
+      <td style="color:var(--muted);">${t.artist}</td>
+      <td style="color:var(--muted); font-size:0.76rem;">${t.album || "-"}</td>
+      <td>
+        <span style="display:inline-block; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; font-weight:600; ${t.streams === 0 ? "background:rgba(229,83,75,0.15); color:#e5534b;" : "background:rgba(255,193,7,0.15); color:#ffc107;"}">
+          ${t.status || t.streams + " Plays"}
+        </span>
+      </td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll(".cover-box[data-uri]").forEach(el => _loadCoverArt(el));
+}
+
+function _renderGhosthitsTable(filter = "") {
+  if (!_libraryRawData || !_libraryRawData.ghost_hits) return;
+  const tbody = document.getElementById("library-ghosthits-tbody");
+  if (!tbody) return;
+
+  const fLower = filter.toLowerCase().trim();
+  let list = _libraryRawData.ghost_hits;
+  if (fLower) {
+    list = list.filter(t => t.track.toLowerCase().includes(fLower) || t.artist.toLowerCase().includes(fLower));
+  }
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine Geister-Hits gefunden.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.slice(0, 50).map(t => `
+    <tr>
+      <td style="width:50px;">
+        <div class="cover-box" data-uri="${t.uri || ''}" style="width:36px; height:36px; border-radius:6px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden;">
+          🎵
+        </div>
+      </td>
+      <td style="font-weight:600; color:var(--text);">${t.track}</td>
+      <td style="color:var(--muted);">${t.artist}</td>
+      <td><strong style="color:var(--green);">${t.streams}</strong> Streams</td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll(".cover-box[data-uri]").forEach(el => _loadCoverArt(el));
+}
+
 async function loadLibraryTab() {
   const emptyState = document.getElementById("library-empty-state");
   const content = document.getElementById("library-content");
@@ -3790,6 +3941,7 @@ async function loadLibraryTab() {
       return;
     }
 
+    _libraryRawData = libData;
     if (emptyState) emptyState.classList.add("hidden");
     if (content) content.classList.remove("hidden");
 
@@ -3803,42 +3955,72 @@ async function loadLibraryTab() {
     const graveEl = document.getElementById("library-graveyard-count");
     if (graveEl) graveEl.textContent = (libData && libData.loaded) ? (libData.graveyard_count || 0).toLocaleString() : "0";
 
-    // 1. Graveyard Table
-    const graveTbody = document.getElementById("library-graveyard-tbody");
-    if (graveTbody) {
-      if (libData && libData.loaded && libData.graveyard_tracks && libData.graveyard_tracks.length > 0) {
-        graveTbody.innerHTML = libData.graveyard_tracks.map(t => `
-          <tr>
-            <td style="font-weight:600; color:var(--text);">${t.track}</td>
-            <td style="color:var(--muted);">${t.artist}</td>
-            <td style="color:var(--muted); font-size:0.76rem;">${t.album || "-"}</td>
-            <td>
-              <span style="display:inline-block; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; font-weight:600; ${t.streams === 0 ? "background:rgba(229,83,75,0.15); color:#e5534b;" : "background:rgba(255,193,7,0.15); color:#ffc107;"}">
-                ${t.status || t.streams + " Plays"}
-              </span>
-            </td>
-          </tr>
-        `).join("");
-      } else {
-        graveTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine Friedhof-Tracks gefunden! Du hörst offenbar alles, was du speicherst.</td></tr>';
+    // Charts
+    if (libData && libData.loaded) {
+      const actCtx = document.getElementById("library-activity-chart");
+      if (actCtx) {
+        if (_libraryActivityChart) _libraryActivityChart.destroy();
+        const activeCount = Math.max(0, (libData.tracks_count || 0) - (libData.graveyard_count || 0));
+        _libraryActivityChart = new Chart(actCtx, {
+          type: "doughnut",
+          data: {
+            labels: ["Aktiv gehört", "Friedhof (0-1x gehört)"],
+            datasets: [{
+              data: [activeCount, libData.graveyard_count || 0],
+              backgroundColor: ["#1db954", "#e5534b"],
+              borderWidth: 0,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: "right", labels: { color: "#b3b3b3", font: { size: 11 } } }
+            }
+          }
+        });
+      }
+
+      const artCtx = document.getElementById("library-artists-chart");
+      if (artCtx && libData.top_library_artists && libData.top_library_artists.length) {
+        if (_libraryArtistsChart) _libraryArtistsChart.destroy();
+        const top10 = libData.top_library_artists.slice(0, 10);
+        _libraryArtistsChart = new Chart(artCtx, {
+          type: "bar",
+          data: {
+            labels: top10.map(a => a.artist),
+            datasets: [{
+              label: "Gespeicherte Tracks",
+              data: top10.map(a => a.count),
+              backgroundColor: "#5b8def",
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: "#888" }, grid: { color: "rgba(255,255,255,0.05)" } },
+              y: { ticks: { color: "#ddd", font: { size: 11 } }, grid: { display: false } }
+            }
+          }
+        });
       }
     }
 
+    // 1. Graveyard Table
+    _renderGraveyardTable();
+    document.getElementById("library-graveyard-search")?.addEventListener("input", (e) => {
+      _renderGraveyardTable(e.target.value);
+    });
+
     // 2. Ghost Hits Table
-    const ghostTbody = document.getElementById("library-ghosthits-tbody");
-    if (ghostTbody) {
-      if (libData && libData.loaded && libData.ghost_hits && libData.ghost_hits.length > 0) {
-        ghostTbody.innerHTML = libData.ghost_hits.map(t => `
-          <tr>
-            <td style="font-weight:600; color:var(--text);">${t.track}</td>
-            <td style="color:var(--muted);">${t.artist}</td>
-            <td><strong style="color:var(--green);">${t.streams}</strong> Streams</td>
-          </tr>
-        `).join("");
-      } else {
-        ghostTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine Geister-Hits gefunden.</td></tr>';
-      }
-    }
+    _renderGhosthitsTable();
+    document.getElementById("library-ghosthits-search")?.addEventListener("input", (e) => {
+      _renderGhosthitsTable(e.target.value);
+    });
 
     // 3. Playlists Section
     const plSec = document.getElementById("playlists-section");

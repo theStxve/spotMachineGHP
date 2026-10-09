@@ -254,7 +254,10 @@ export function analyzeLibrary(library, frame) {
     ghostHits.sort((a, b) => b.streams - a.streams);
   }
 
-  graveyard.sort((a, b) => a.streams - b.streams);
+  const topArtists = Array.from(artistCounts.entries())
+    .map(([artist, count]) => ({ artist, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
 
   return {
     loaded: true,
@@ -262,8 +265,9 @@ export function analyzeLibrary(library, frame) {
     albums_count: albums.length,
     shows_count: showsRaw.length,
     graveyard_count: graveyard.length,
-    graveyard_tracks: graveyard.slice(0, 50),
-    ghost_hits: ghostHits.slice(0, 30),
+    graveyard_tracks: graveyard.slice(0, 100),
+    ghost_hits: ghostHits.slice(0, 50),
+    top_library_artists: topArtists,
   };
 }
 
