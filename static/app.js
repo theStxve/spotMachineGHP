@@ -15,8 +15,16 @@ const state = {
   activeTab: 'recommend',
   charts: {},
   skipData: [],
-  skipSort: { col: 'skip_rate', asc: false }
+  skipSort: { col: 'skip_rate', asc: false },
+  streamingLoaded: false,
+  accountOnly: false,
 };
+
+const STREAMING_TABS = new Set([
+  'recommend', 'topsongs', 'playlist', 'compare', 'heatmap', 'artists',
+  'skips', 'discover', 'monthly', 'sessions', 'platforms', 'behavior',
+  'albums', 'search'
+]);
 
 // ── GLOBALE JAHRES-INTEGRATION (years_excluded) ─────────────────────────────────
 // Die globalen Jahre waren bisher nur eine Mehrfach-Auswahl über die Chips.
@@ -141,25 +149,105 @@ async function apiCall(url, method="GET", body=null) {
 }
 
 // ── ROUTER ──
+function switchToTab(tabName) {
+  const btn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+  if (btn) {
+    btn.click();
+  } else {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.add("hidden"));
+    state.activeTab = tabName;
+    const panel = document.getElementById(`panel-${tabName}`);
+    if (panel) panel.classList.remove("hidden");
+  }
+}
+
+function showStreamingUploadPrompt(panel, tabName) {
+  if (!panel) return;
+  Array.from(panel.children).forEach(child => {
+    if (child.classList.contains("streaming-missing-prompt")) return;
+    if (child.style.display !== "none") {
+      child.dataset.originalDisplay = child.style.display || "";
+      child.style.display = "none";
+    }
+  });
+
+  let prompt = panel.querySelector(".streaming-missing-prompt");
+  if (!prompt) {
+    prompt = document.createElement("div");
+    prompt.className = "streaming-missing-prompt";
+    prompt.style.cssText = "background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:2.5rem 1.5rem; text-align:center; max-width:620px; margin:2rem auto;";
+    prompt.innerHTML = `
+      <div style="font-size:2.8rem; margin-bottom:0.75rem;">🎧</div>
+      <h3 style="font-size:1.25rem; font-weight:700; margin-bottom:0.5rem;">Streaming-Verlauf noch nicht geladen</h3>
+      <p style="color:var(--muted); font-size:0.88rem; line-height:1.5; margin-bottom:1.5rem;">
+        Dieser Tab benötigt deine Streaming-Historie (<code>Streaming_History_Audio_*.json</code> oder <code>endsong.json</code>).<br>
+        Lade deine Streaming-Dateien oder dein Spotify-ZIP hoch, um deine Song-, Artist- und Hörzeit-Statistiken freizuschalten.
+      </p>
+      <div class="account-tab-dropzone" data-target-tab="${tabName}" style="margin-bottom:1rem; border:2px dashed var(--border); border-radius:10px; padding:1.5rem; background:rgba(255,255,255,0.02); text-align:center; transition:border-color 0.2s, background 0.2s;">
+        <i data-lucide="upload-cloud" style="width:32px; height:32px; color:var(--green); margin-bottom:0.5rem;"></i>
+        <div style="font-weight:600; font-size:0.95rem; margin-bottom:0.35rem;">Streaming-Dateien hier ablegen</div>
+        <p style="font-size:0.8rem; color:var(--muted); margin-bottom:1rem;">ZIP-Archiv oder Streaming_History-Dateien</p>
+        <label class="btn btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.5rem;">
+          <i data-lucide="folder-up" style="width:16px; height:16px;"></i> Streaming-Dateien auswählen
+          <input type="file" multiple accept=".json,.zip" class="hidden tab-upload-input" data-target-tab="${tabName}">
+        </label>
+      </div>
+    `;
+    panel.appendChild(prompt);
+  }
+  prompt.style.display = "block";
+  bindAccountDropzones();
+  lucide.createIcons();
+}
+
+function hideStreamingUploadPrompt(panel) {
+  if (!panel) return;
+  const prompt = panel.querySelector(".streaming-missing-prompt");
+  if (prompt) prompt.style.display = "none";
+  Array.from(panel.children).forEach(child => {
+    if (child.classList.contains("streaming-missing-prompt")) return;
+    if (child.dataset.originalDisplay !== undefined) {
+      child.style.display = child.dataset.originalDisplay;
+      delete child.dataset.originalDisplay;
+    } else {
+      child.style.display = "";
+    }
+  });
+}
+
+function hideAllStreamingPrompts() {
+  document.querySelectorAll(".tab-panel").forEach(p => hideStreamingUploadPrompt(p));
+}
+
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.add("hidden"));
     btn.classList.add("active");
     state.activeTab = btn.dataset.tab;
-    document.getElementById(`panel-${state.activeTab}`).classList.remove("hidden");
+    const panel = document.getElementById(`panel-${state.activeTab}`);
+    if (panel) panel.classList.remove("hidden");
+
+    // Wenn ein Streaming-Tab aufgerufen wird, aber Streaming noch nicht geladen ist:
+    if (STREAMING_TABS.has(state.activeTab)) {
+      if (!state.streamingLoaded) {
+        showStreamingUploadPrompt(panel, state.activeTab);
+        return;
+      } else {
+        hideStreamingUploadPrompt(panel);
+      }
+    }
     
     // Auto-fetch logic
     if (state.activeTab === 'artists' && state.artists.length === 0) loadArtists();
-    // Der Top-Songs-Tab lädt beim ersten Öffnen selbst - das ist die
-    // einfachste Liste und soll ohne Klick da stehen.
     if (state.activeTab === 'topsongs' && !state.topSongs) loadTopSongs();
     if (state.activeTab === 'monthly') loadMonthly();
     if (state.activeTab === 'sessions') loadSessions();
     if (state.activeTab === 'platforms') loadPlatforms();
     if (state.activeTab === 'albums') loadAlbums();
     if (state.activeTab === 'discover') loadDiscoverTimeline();
-    if (state.activeTab === 'behavior') document.getElementById('behavior-btn').click();
+    if (state.activeTab === 'behavior') document.getElementById('behavior-btn')?.click();
     if (state.activeTab === 'searches') loadSearchesTab();
     if (state.activeTab === 'inferences') loadInferencesTab();
     if (state.activeTab === 'library') loadLibraryTab();
@@ -361,24 +449,171 @@ async function collectDroppedFiles(dt) {
     return out.length ? out : [...dt.files];
 }
 
-function handleSelectedFiles(files) {
-    const wanted = files.filter(f => f.name.endsWith(".zip") || f.name.endsWith(".json"));
-    // Aus entpackten Ordnern kommen die Dateien mit vollem Pfad - nur der
-    // Name zaehlt fuer die Anzeige.
-    pendingFiles = wanted.map(f => {
-        if (f.name && !f.name.includes("/") && !f.name.includes("\\")) return f;
-        const base = (f.webkitRelativePath || f.name || "").split(/[\\/]/).pop();
-        return new File([f], base, { type: f.type });
+function hasAnyAccountData(status) {
+    if (!status) return false;
+    return Object.entries(status).some(([k, v]) => k.startsWith("has_") && v === true);
+}
+
+function applySessionData(data, keepActiveTab = false) {
+    state.years = data.years || [];
+    state.totalStreams = data.total_streams || 0;
+    if (data.year_scope) state.yearScope = data.year_scope;
+    if (data.account_status) state.accountStatus = data.account_status;
+    state.streamingLoaded = (data.streaming_loaded !== false) && ((state.totalStreams || 0) > 0);
+    state.accountOnly = !state.streamingLoaded && (data.account_only || hasAnyAccountData(state.accountStatus));
+    state.dataLoaded = true;
+
+    updateYearSelects();
+    refreshYearDropdowns();
+    document.getElementById("upload-section")?.classList.add("hidden");
+    document.getElementById("tab-nav")?.classList.remove("hidden");
+    updateHeaderSyncBtn();
+    if (data.quality) applyQuality(data.quality);
+    if (data.media) applyMediaInfo(data.media);
+    if (data.blacklist) renderBlacklist(data.blacklist);
+    if (data.year_exclusion) renderYearExclusion(data.year_exclusion);
+
+    const yearBar = document.getElementById("global-year-bar");
+    if (yearBar) {
+        if (!state.streamingLoaded || !state.years.length) {
+            yearBar.style.display = "none";
+        } else {
+            yearBar.style.display = "flex";
+            renderYearChips();
+        }
+    }
+
+    if (state.streamingLoaded) {
+        hideAllStreamingPrompts();
+    }
+
+    if (!keepActiveTab) {
+        if (state.streamingLoaded) {
+            switchToTab(state.activeTab && STREAMING_TABS.has(state.activeTab) ? state.activeTab : "recommend");
+        } else if (state.accountOnly) {
+            const s = state.accountStatus || {};
+            let targetTab = "library";
+            if (s.has_library) targetTab = "library";
+            else if (s.has_searches) targetTab = "searches";
+            else if (s.has_inferences) targetTab = "inferences";
+            else if (s.has_marquee) targetTab = "marquee";
+            else if (s.has_follow) targetTab = "profile";
+            else if (s.has_wrapped) targetTab = "wrapped";
+            switchToTab(targetTab);
+        }
+    } else {
+        switchToTab(state.activeTab);
+    }
+    bindAccountDropzones();
+    lucide.createIcons();
+}
+
+async function uploadSupplementaryFiles(files, targetTab) {
+    const list = Array.from(files || []).filter(f => f.name.endsWith(".zip") || f.name.endsWith(".json"));
+    if (!list.length) return;
+    showLoader("Lade Dateien hoch & verarbeite...");
+    const fd = new FormData();
+    for (const f of list) fd.append("files", f);
+    try {
+        const res = await fetch("/upload", { method: "POST", body: fd });
+        const data = await res.json();
+        hideLoader();
+        if (data.error) return alert(data.error);
+
+        applySessionData(data, true);
+        showToast(data.streaming_loaded ? `${(data.total_streams || 0).toLocaleString()} Streams aktiv!` : "Kontodaten erfolgreich geladen!");
+
+        if (targetTab === 'searches') loadSearchesTab();
+        else if (targetTab === 'inferences') loadInferencesTab();
+        else if (targetTab === 'library') loadLibraryTab();
+        else if (targetTab === 'marquee') loadMarqueeTab();
+        else if (targetTab === 'profile') loadProfileTab();
+        else if (targetTab === 'wrapped') loadWrappedTab();
+        else if (STREAMING_TABS.has(targetTab) && state.streamingLoaded) {
+            switchToTab(targetTab);
+        }
+    } catch (err) {
+        hideLoader();
+        alert("Fehler beim Hochladen: " + err.message);
+    }
+}
+
+function bindAccountDropzones() {
+    document.querySelectorAll(".account-tab-dropzone").forEach(zone => {
+        if (zone._bound) return;
+        zone._bound = true;
+        zone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            zone.style.borderColor = "var(--green)";
+            zone.style.background = "rgba(29, 185, 84, 0.08)";
+        });
+        zone.addEventListener("dragleave", () => {
+            zone.style.borderColor = "var(--border)";
+            zone.style.background = "rgba(255, 255, 255, 0.02)";
+        });
+        zone.addEventListener("drop", async (e) => {
+            e.preventDefault();
+            zone.style.borderColor = "var(--border)";
+            zone.style.background = "rgba(255, 255, 255, 0.02)";
+            const files = e.dataTransfer.files;
+            const tabName = zone.dataset.targetTab || state.activeTab;
+            if (files && files.length) {
+                uploadSupplementaryFiles(files, tabName);
+            }
+        });
     });
-    if (!pendingFiles.length) return;
-    fileList.innerHTML = pendingFiles.map(f => `
-        <span class="tag-pill" style="padding:0.3rem 0.6rem; font-size:0.8rem;">
-            ${icon("file-text")} ${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)
+}
+
+document.addEventListener("change", (e) => {
+    const input = e.target.closest(".tab-upload-input");
+    if (!input || !input.files || !input.files.length) return;
+    const tabName = input.dataset.targetTab || state.activeTab;
+    uploadSupplementaryFiles(input.files, tabName);
+    input.value = "";
+});
+
+function renderPendingFiles() {
+    if (!pendingFiles.length) {
+        fileList.innerHTML = "";
+        fileList.classList.add("hidden");
+        uploadBtn.classList.add("hidden");
+        if (fileInput) fileInput.value = "";
+        return;
+    }
+    fileList.innerHTML = pendingFiles.map((f, i) => `
+        <span class="tag-pill" style="padding:0.3rem 0.6rem; font-size:0.8rem; display:inline-flex; align-items:center; gap:0.4rem;">
+            ${icon("file-text")} <span>${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)</span>
+            <button type="button" class="remove-pending-file" data-pending-idx="${i}" title="Datei entfernen"
+              style="background:transparent; border:none; color:inherit; opacity:0.75; cursor:pointer; padding:0 0 0 0.2rem; font-size:1.15rem; line-height:1; display:inline-flex; align-items:center;">&times;</button>
         </span>
     `).join("");
     fileList.classList.remove("hidden");
     uploadBtn.classList.remove("hidden");
     lucide.createIcons();
+}
+
+fileList?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".remove-pending-file");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const idx = Number(btn.dataset.pendingIdx);
+    if (!Number.isNaN(idx) && idx >= 0 && idx < pendingFiles.length) {
+        pendingFiles.splice(idx, 1);
+        renderPendingFiles();
+    }
+});
+
+function handleSelectedFiles(files) {
+    const wanted = files.filter(f => f.name.endsWith(".zip") || f.name.endsWith(".json"));
+    const newFiles = wanted.map(f => {
+        if (f.name && !f.name.includes("/") && !f.name.includes("\\")) return f;
+        const base = (f.webkitRelativePath || f.name || "").split(/[\\/]/).pop();
+        return new File([f], base, { type: f.type });
+    });
+    if (!newFiles.length) return;
+    pendingFiles = [...pendingFiles, ...newFiles];
+    renderPendingFiles();
 }
 
 uploadBtn.addEventListener("click", async () => {
@@ -392,20 +627,8 @@ uploadBtn.addEventListener("click", async () => {
         const data = await res.json();
         hideLoader();
         if(data.error) return alert(data.error);
-        state.years = data.years;
-        state.totalStreams = data.total_streams;
-        if(data.year_scope) state.yearScope = data.year_scope;
-        state.dataLoaded = true;
-        if(data && data.account_status) state.accountStatus = data.account_status;
-        updateYearSelects();
-        document.getElementById("upload-section").classList.add("hidden");
-        document.getElementById("tab-nav").classList.remove("hidden");
-        document.getElementById("panel-recommend").classList.remove("hidden");
-        updateHeaderSyncBtn();
-        applyQuality(data.quality);
-        if(data.media) applyMediaInfo(data.media);
-        if(data.blacklist) renderBlacklist(data.blacklist);
-        lucide.createIcons();
+        applySessionData(data, false);
+        showToast(data.streaming_loaded ? `${(data.total_streams || 0).toLocaleString()} Streams aktiv!` : "Kontodaten geladen!");
     } catch(err) {
         hideLoader();
         alert("Fehler beim Hochladen: " + err.message);
@@ -506,19 +729,23 @@ function renderBlacklist(info) {
         return `<span class="tag-pill ${cls}" title="${title}"
             style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.25rem 0.5rem;font-size:0.78rem;">
             ${name.replace(/[<>&]/g,'')}
-            <i data-lucide="x" data-bl-remove="${i}" style="width:11px;height:11px;cursor:pointer;"></i>
+            <button type="button" class="chip-remove-btn" data-bl-remove="${i}" title="Sperre aufheben" style="background:transparent;border:none;color:inherit;cursor:pointer;padding:0 0 0 0.15rem;font-size:1.15rem;line-height:1;display:inline-flex;align-items:center;opacity:0.75;">&times;</button>
         </span>`;
     }).join("");
-    box.querySelectorAll("[data-bl-remove]").forEach(el => {
-        el.addEventListener("click", () => removeFromBlacklist(Number(el.dataset.blRemove)));
-    });
+    box.onclick = (e) => {
+        const btn = e.target.closest("[data-bl-remove]");
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            removeFromBlacklist(Number(btn.dataset.blRemove));
+        }
+    };
     if(hint) {
         const parts = [];
         if(bl.artists_hidden) parts.push(`${bl.artists_hidden} Artists / ${bl.streams_hidden.toLocaleString()} Streams raus`);
         if(bl.unknown.length) parts.push(`${bl.unknown.length} ohne Treffer`);
         hint.textContent = parts.join(" · ");
     }
-    lucide.createIcons();
 }
 
 async function addToBlacklist(name) {
@@ -548,13 +775,17 @@ async function renderYearExclusion(info) {
   box.innerHTML = info.excluded.map(function (y, i) {
     return '<span class="tag-pill" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.25rem 0.5rem;font-size:0.78rem;">' +
       y +
-      '<i data-lucide="x" data-yex-remove="' + i + '" style="width:11px;height:11px;cursor:pointer;"></i></span>';
+      '<button type="button" class="chip-remove-btn" data-yex-remove="' + i + '" title="Ausschluss aufheben" style="background:transparent;border:none;color:inherit;cursor:pointer;padding:0 0 0 0.15rem;font-size:1.15rem;line-height:1;display:inline-flex;align-items:center;opacity:0.75;">&times;</button></span>';
   }).join("");
-  box.querySelectorAll("[data-yex-remove]").forEach(function (el) {
-    el.addEventListener("click", function () { removeFromYearExclusion(Number(el.dataset.yexRemove)); });
-  });
+  box.onclick = function (e) {
+    const btn = e.target.closest("[data-yex-remove]");
+    if (btn) {
+      e.preventDefault();
+      e.stopPropagation();
+      removeFromYearExclusion(Number(btn.dataset.yexRemove));
+    }
+  };
   hint.textContent = info.years_hidden + " Jahrgang" + (info.years_hidden === 1 ? "" : "e") + " raus · " + (info.streams_hidden || 0).toLocaleString() + " Streams";
-  lucide.createIcons();
 }
 
 async function removeFromYearExclusion(index) {
@@ -3517,29 +3748,14 @@ async function checkExistingSession() {
     try {
         const res = await apiCall("/api/session_status");
         if(res.loaded) {
-            state.years = res.years;
-            state.totalStreams = res.total_streams;
-            if(res.year_scope) state.yearScope = res.year_scope;
-            if(res.account_status) state.accountStatus = res.account_status;
-            state.dataLoaded = true;
-        if(data && data.account_status) state.accountStatus = data.account_status;
-            if (res.year_exclusion) renderYearExclusion(res.year_exclusion);
-            updateYearSelects();
-            refreshYearDropdowns();
-            document.getElementById("upload-section").classList.add("hidden");
-            document.getElementById("tab-nav").classList.remove("hidden");
-            document.getElementById("panel-recommend").classList.remove("hidden");
-            updateHeaderSyncBtn();
-            applyQuality(res.quality);
-            if(res.media) applyMediaInfo(res.media);
-            if(res.blacklist) renderBlacklist(res.blacklist);
-            // Die Einstellungen (Zeitzone, Medien-Toggle, Profil, Blacklist)
-            // koennen aus dem Cache stammen und weichen dann von den noch
-            // leeren UI-Feldern ab - darum einmal frisch einlesen. Sonst waere
-            // z. B. der lokale Zeitzonen-Schalter nach dem Reload ausgegraut.
+            applySessionData(res, false);
             await loadSettings();
             lucide.createIcons();
-            showToast(`Datensatz aktiv: ${res.total_streams.toLocaleString()} Streams`);
+            if (state.streamingLoaded) {
+                showToast(`Datensatz aktiv: ${(res.total_streams || 0).toLocaleString()} Streams`);
+            } else if (state.accountOnly) {
+                showToast("Kontodaten geladen!");
+            }
         }
     } catch(e) {
         console.error("Session restore check:", e);
@@ -3581,6 +3797,7 @@ document.addEventListener("DOMContentLoaded", () => {
   _renderBasket();
   bindYearDropdowns();
   refreshYearDropdowns();
+  bindAccountDropzones();
   checkExistingSession().then(startHeartbeat);
 });
 

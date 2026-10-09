@@ -11,7 +11,7 @@ import {
   loadFiles, setIncludeOutliers, getQuality, getSettings, setSettings, applyTimeMode,
   setOnlyMusic, getMedia, setArtistBlacklist, getBlacklist, setYears, getYearScope,
   setYearsExcluded, getYearExclusion, appendStreams,
-  getAccountData, getAccountStatus,
+  getAccountData, getAccountStatus, hasAccountData,
 } from "./core/store.js";
 import {
   analyzeSearches, analyzeInferences, analyzeLibrary, analyzePlaylists, analyzePayments,
@@ -68,18 +68,21 @@ export async function handleRequest(method, url, body, query) {
       (f) => f && f.name && f.name !== ""
     );
     if (!files.length) throw new RouteError("Keine Datei hochgeladen.");
-    const { meta, quality, media: mediaInfo } = await loadFiles(files, onUploadProgress);
+    const res = await loadFiles(files, onUploadProgress);
     const saved = await saveCache({ profile: (getSettings().profile || "").trim() });
     return {
       success: true,
-      years: meta.years,
-      total_streams: meta.total,
-      unique_tracks: meta.uniqueTracks,
-      quality: qualitySummary(quality),
-      media: mediaInfo,
+      years: res.meta.years,
+      total_streams: res.meta.total,
+      unique_tracks: res.meta.uniqueTracks,
+      quality: qualitySummary(res.quality),
+      media: res.media,
       blacklist: getBlacklist(),
       year_scope: getYearScope(),
+      year_exclusion: getYearExclusion(),
       account_status: getAccountStatus(),
+      streaming_loaded: res.streamingLoaded !== false && hasData(),
+      account_only: !hasData() && hasAccountData(),
       cache_saved: saved.ok,
       cache_error: saved.ok ? null : saved.reason,
     };
@@ -162,10 +165,32 @@ export async function handleRequest(method, url, body, query) {
   }
 
   if (path === "/api/session_status" && method === "GET") {
-    if (!hasData()) return { loaded: false, account_status: getAccountStatus() };
+    const accStatus = getAccountStatus();
+    if (!hasData()) {
+      if (hasAccountData()) {
+        return {
+          loaded: true,
+          streaming_loaded: false,
+          account_only: true,
+          total_streams: 0,
+          unique_tracks: 0,
+          years: [],
+          latest_stream: null,
+          quality: qualitySummary(getQuality()),
+          media: getMedia(),
+          blacklist: getBlacklist(),
+          year_exclusion: getYearExclusion(),
+          year_scope: getYearScope(),
+          account_status: accStatus,
+        };
+      }
+      return { loaded: false, account_status: accStatus };
+    }
     const df = getFrame();
     return {
       loaded: true,
+      streaming_loaded: true,
+      account_only: false,
       total_streams: df.n,
       unique_tracks: df.meta.nSongs,
       years: getMeta().years,
@@ -175,7 +200,7 @@ export async function handleRequest(method, url, body, query) {
       blacklist: getBlacklist(),
       year_exclusion: getYearExclusion(),
       year_scope: getYearScope(),
-      account_status: getAccountStatus(),
+      account_status: accStatus,
     };
   }
 
@@ -429,8 +454,10 @@ export async function handleRequest(method, url, body, query) {
 
 /** Fortschrittsanzeige waehrend des Imports (app.js zeigt ueber den Loader). */
 function onUploadProgress(pct, label) {
-  const el = document.getElementById("loader-text");
-  if (el) el.textContent = `Lese ${label} ... ${Math.round(pct * 100)} %`;
+  if (typeof document !== "undefined") {
+    const el = document.getElementById("loader-text");
+    if (el) el.textContent = `Lese ${label} ... ${Math.round(pct * 100)} %`;
+  }
 }
 
 /** Was das Frontend zum Ausschluss auffaelliger Zeitstempel wissen muss.

@@ -885,16 +885,27 @@
           Dieser Tab analysiert deine gesamte Suchhistorie, Top-Suchbegriffe nach Uhrzeit und Wochentag sowie <strong>Geister-Suchen</strong> (Künstler/Tracks, nach denen du gesucht hast, die du aber nie gestreamt hast).<br>
           Dafür wird die Datei <code>SearchQueries.json</code> aus deinen Spotify-Kontodaten benötigt.
         </p>
-        <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:left; font-size:0.82rem; margin-bottom:1.5rem;">
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:left; font-size:0.82rem; margin-bottom:1.25rem;">
           <strong style="color:var(--green); display:block; margin-bottom:0.35rem;">So kommst du an deine Suchdaten:</strong>
           1. Öffne das <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" style="color:var(--green); text-decoration:underline;">Spotify Datenschutz-Center</a>.<br>
           2. Scrolle zu <em>"Deine Kontodaten herunterladen"</em> &rarr; <strong>Kontodaten</strong> anfordern.<br>
           3. Nach wenigen Tagen schickt Spotify dir eine ZIP-Datei per E-Mail.<br>
-          4. Ziehe die ZIP oder die <code>SearchQueries.json</code> einfach in den Upload-Bereich oben.
+          4. Ziehe die ZIP oder die <code>SearchQueries.json</code> direkt hier hinein.
         </div>
-        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
-          <i data-lucide="external-link"></i> Spotify Datenschutz-Center öffnen
-        </a>
+        <div class="account-tab-dropzone" data-target-tab="searches" style="margin-bottom:1.25rem; border:2px dashed var(--border); border-radius:10px; padding:1.25rem; background:rgba(255,255,255,0.02); text-align:center; transition:border-color 0.2s, background 0.2s;">
+          <i data-lucide="upload-cloud" style="width:28px; height:28px; color:var(--green); margin-bottom:0.35rem;"></i>
+          <div style="font-weight:600; font-size:0.92rem; margin-bottom:0.2rem;">Dateien direkt hier ablegen oder auswählen</div>
+          <p style="font-size:0.78rem; color:var(--muted); margin-bottom:0.75rem;">Ziehe deine <code>SearchQueries.json</code> oder dein Spotify-ZIP hierher</p>
+          <label class="btn btn-sm btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem;">
+            <i data-lucide="folder-up" style="width:14px; height:14px;"></i> Datei auswählen
+            <input type="file" multiple accept=".json,.zip" class="hidden tab-upload-input" data-target-tab="searches">
+          </label>
+        </div>
+        <div style="display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+          <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+            <i data-lucide="external-link"></i> Spotify Datenschutz-Center öffnen
+          </a>
+        </div>
       </div>
 
       <!-- Loaded Content -->
@@ -1009,15 +1020,26 @@
           Spotifys Algorithmus ordnet dich in geheime Werbe-, Kultur- und Lifestyle-Segmente ein (z.B. <em>Culture_HipHop</em>, <em>Gen_Z</em>, <em>Commuter</em>, <em>Audio_Explorer</em>).<br>
           Dafür wird die Datei <code>Inferences.json</code> (oder <code>Userdata.json</code>) aus deinen Spotify-Kontodaten benötigt.
         </p>
-        <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:left; font-size:0.82rem; margin-bottom:1.5rem;">
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:left; font-size:0.82rem; margin-bottom:1.25rem;">
           <strong style="color:var(--green); display:block; margin-bottom:0.35rem;">So forderst du dein Geschmacksprofil an:</strong>
           1. Öffne das <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" style="color:var(--green); text-decoration:underline;">Spotify Datenschutz-Center</a>.<br>
           2. Fordere bei <em>"Deine Kontodaten"</em> den Export an.<br>
-          3. Lade die ZIP oder die <code>Inferences.json</code> hier hoch.
+          3. Lade die ZIP oder die <code>Inferences.json</code> direkt hier hoch.
         </div>
-        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
-          <i data-lucide="external-link"></i> Spotify Datenschutz-Center öffnen
-        </a>
+        <div class="account-tab-dropzone" data-target-tab="inferences" style="margin-bottom:1.25rem; border:2px dashed var(--border); border-radius:10px; padding:1.25rem; background:rgba(255,255,255,0.02); text-align:center; transition:border-color 0.2s, background 0.2s;">
+          <i data-lucide="upload-cloud" style="width:28px; height:28px; color:var(--green); margin-bottom:0.35rem;"></i>
+          <div style="font-weight:600; font-size:0.92rem; margin-bottom:0.2rem;">Dateien direkt hier ablegen oder auswählen</div>
+          <p style="font-size:0.78rem; color:var(--muted); margin-bottom:0.75rem;">Ziehe deine <code>Inferences.json</code>, <code>Userdata.json</code> oder dein Spotify-ZIP hierher</p>
+          <label class="btn btn-sm btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem;">
+            <i data-lucide="folder-up" style="width:14px; height:14px;"></i> Datei auswählen
+            <input type="file" multiple accept=".json,.zip" class="hidden tab-upload-input" data-target-tab="inferences">
+          </label>
+        </div>
+        <div style="display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+          <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+            <i data-lucide="external-link"></i> Spotify Datenschutz-Center öffnen
+          </a>
+        </div>
       </div>
 
       <!-- Loaded Content -->
@@ -1120,15 +1142,26 @@
           Dieser Tab deckt deinen <strong>Bibliotheks-Friedhof</strong> auf (gespeicherte Songs, die du 0x oder höchstens 1x gehört hast), zeigt <strong>Geister-Hits</strong> (meistgehörte Tracks, die du nie gespeichert hast) und findet Duplikate in deinen Playlists.<br>
           Dafür wird <code>YourLibrary.json</code> oder <code>Playlist1.json</code> aus deinen Spotify-Kontodaten benötigt.
         </p>
-        <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:left; font-size:0.82rem; margin-bottom:1.5rem;">
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:left; font-size:0.82rem; margin-bottom:1.25rem;">
           <strong style="color:var(--green); display:block; margin-bottom:0.35rem;">So lädst du deine Bibliotheksdaten:</strong>
           1. Gehe zum <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" style="color:var(--green); text-decoration:underline;">Spotify Datenschutz-Center</a>.<br>
           2. Fordere <strong>Kontodaten</strong> an (enthält <code>YourLibrary.json</code> und <code>Playlist1.json</code>).<br>
-          3. Lade die ZIP oder die JSON-Dateien hier hoch.
+          3. Lade die ZIP oder die JSON-Dateien direkt hier hoch.
         </div>
-        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
-          <i data-lucide="external-link"></i> Spotify Datenschutz-Center öffnen
-        </a>
+        <div class="account-tab-dropzone" data-target-tab="library" style="margin-bottom:1.25rem; border:2px dashed var(--border); border-radius:10px; padding:1.25rem; background:rgba(255,255,255,0.02); text-align:center; transition:border-color 0.2s, background 0.2s;">
+          <i data-lucide="upload-cloud" style="width:28px; height:28px; color:var(--green); margin-bottom:0.35rem;"></i>
+          <div style="font-weight:600; font-size:0.92rem; margin-bottom:0.2rem;">Dateien direkt hier ablegen oder auswählen</div>
+          <p style="font-size:0.78rem; color:var(--muted); margin-bottom:0.75rem;">Ziehe deine <code>YourLibrary.json</code>, Playlist-Dateien oder dein Spotify-ZIP hierher</p>
+          <label class="btn btn-sm btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem;">
+            <i data-lucide="folder-up" style="width:14px; height:14px;"></i> Datei auswählen
+            <input type="file" multiple accept=".json,.zip" class="hidden tab-upload-input" data-target-tab="library">
+          </label>
+        </div>
+        <div style="display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+          <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+            <i data-lucide="external-link"></i> Spotify Datenschutz-Center öffnen
+          </a>
+        </div>
       </div>
 
       <!-- Loaded Content -->
@@ -1261,9 +1294,20 @@
           In der Datei <code>Marquee.json</code> stuft Spotify dich für tausende Künstler in Hörer-Segmente ein:<br>
           <strong>Super Listeners</strong> (deine absoluten Top-Artists), <strong>Moderate</strong>, <strong>Light</strong> und <strong>Previously Active</strong> (früher gehört, heute inaktiv).
         </p>
-        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
-          <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
-        </a>
+        <div class="account-tab-dropzone" data-target-tab="marquee" style="margin-bottom:1.25rem; border:2px dashed var(--border); border-radius:10px; padding:1.25rem; background:rgba(255,255,255,0.02); text-align:center; transition:border-color 0.2s, background 0.2s;">
+          <i data-lucide="upload-cloud" style="width:28px; height:28px; color:var(--green); margin-bottom:0.35rem;"></i>
+          <div style="font-weight:600; font-size:0.92rem; margin-bottom:0.2rem;">Dateien direkt hier ablegen oder auswählen</div>
+          <p style="font-size:0.78rem; color:var(--muted); margin-bottom:0.75rem;">Ziehe deine <code>Marquee.json</code> oder dein Spotify-ZIP hierher</p>
+          <label class="btn btn-sm btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem;">
+            <i data-lucide="folder-up" style="width:14px; height:14px;"></i> Datei auswählen
+            <input type="file" multiple accept=".json,.zip" class="hidden tab-upload-input" data-target-tab="marquee">
+          </label>
+        </div>
+        <div style="display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+          <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+            <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
+          </a>
+        </div>
       </div>
 
       <!-- Loaded Content -->
@@ -1353,9 +1397,20 @@
         <p style="color:var(--muted); font-size:0.88rem; line-height:1.5; margin-bottom:1.25rem;">
           Zeigt dein Spotify-Profil (<code>UserAttributes.json</code>, <code>Identity.json</code>), deine Follower, Accounts denen du folgst und <strong>gegenseitige Freunde</strong> (<code>Follow.json</code>).
         </p>
-        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
-          <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
-        </a>
+        <div class="account-tab-dropzone" data-target-tab="profile" style="margin-bottom:1.25rem; border:2px dashed var(--border); border-radius:10px; padding:1.25rem; background:rgba(255,255,255,0.02); text-align:center; transition:border-color 0.2s, background 0.2s;">
+          <i data-lucide="upload-cloud" style="width:28px; height:28px; color:var(--green); margin-bottom:0.35rem;"></i>
+          <div style="font-weight:600; font-size:0.92rem; margin-bottom:0.2rem;">Dateien direkt hier ablegen oder auswählen</div>
+          <p style="font-size:0.78rem; color:var(--muted); margin-bottom:0.75rem;">Ziehe deine <code>Follow.json</code>, <code>Userdata.json</code> oder dein Spotify-ZIP hierher</p>
+          <label class="btn btn-sm btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem;">
+            <i data-lucide="folder-up" style="width:14px; height:14px;"></i> Datei auswählen
+            <input type="file" multiple accept=".json,.zip" class="hidden tab-upload-input" data-target-tab="profile">
+          </label>
+        </div>
+        <div style="display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+          <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+            <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
+          </a>
+        </div>
       </div>
 
       <!-- Loaded Content -->
@@ -1427,9 +1482,20 @@
         <p style="color:var(--muted); font-size:0.88rem; line-height:1.5; margin-bottom:1.25rem;">
           Dieser Tab zeigt dein offizielles <strong>Spotify Wrapped</strong> (aus <code>Wrapped*.json</code>) inklusive Hör-Alter, deinem Musik-Club, Durchschnitts-Tempo (BPM) und Jahres-Minuten.
         </p>
-        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
-          <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
-        </a>
+        <div class="account-tab-dropzone" data-target-tab="wrapped" style="margin-bottom:1.25rem; border:2px dashed var(--border); border-radius:10px; padding:1.25rem; background:rgba(255,255,255,0.02); text-align:center; transition:border-color 0.2s, background 0.2s;">
+          <i data-lucide="upload-cloud" style="width:28px; height:28px; color:var(--green); margin-bottom:0.35rem;"></i>
+          <div style="font-weight:600; font-size:0.92rem; margin-bottom:0.2rem;">Dateien direkt hier ablegen oder auswählen</div>
+          <p style="font-size:0.78rem; color:var(--muted); margin-bottom:0.75rem;">Ziehe deine <code>Wrapped*.json</code> oder dein Spotify-ZIP hierher</p>
+          <label class="btn btn-sm btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem;">
+            <i data-lucide="folder-up" style="width:14px; height:14px;"></i> Datei auswählen
+            <input type="file" multiple accept=".json,.zip" class="hidden tab-upload-input" data-target-tab="wrapped">
+          </label>
+        </div>
+        <div style="display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+          <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+            <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
+          </a>
+        </div>
       </div>
 
       <!-- Loaded Content -->

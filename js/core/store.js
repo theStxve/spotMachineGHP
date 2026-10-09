@@ -70,6 +70,11 @@ export function getAccountStatus() {
   };
 }
 
+export function hasAccountData() {
+  const s = getAccountStatus();
+  return Object.entries(s).some(([k, v]) => k.startsWith("has_") && v === true);
+}
+
 /** Schaltet den Medienfilter um (nur Musik bzw. alles). */
 export function setOnlyMusic(onlyMusic) {
   settings.only_music = !!onlyMusic;
@@ -534,26 +539,20 @@ function _rawFrame() {
  * @returns {Promise<{ok:boolean, reason?:string}>}
  */
 export async function saveCache(opts = {}) {
-  if (!frame) return { ok: false, reason: "kein Datensatz" };
+  if (!frame && !hasAccountData()) return { ok: false, reason: "kein Datensatz" };
   try {
-    // WICHTIG: immer frameAll (der ungefilterte Rohbestand) sichern, NIE die
-    // aktive Ansicht `frame`. `frame` ist bei aktiver Blacklist/Medien-/
-    // Jahres- bzw. Ausreisser-Filter ein sliceRows-Abzug mit gekuerzten
-    // Spalten. Wuerde der gesichert, waeren die herausgefilterten Zeilen nach
-    // dem Reload endgueltig weg - gesperrte Artists liessen sich nicht mehr
-    // entsperren, Ausreisser-Jahrgaenge nicht zurueckschalten. Die Filter
-    // leben ausschliesslich in `settings` und werden beim Laden neu angewendet.
-    const source = _rawFrame();
+    const source = frame ? _rawFrame() : { cols: {}, n: 0, meta: { nSongs: 0, nArtists: 0, nAlbums: 0 } };
     const cols = {};
     const types = {};
-    for (const [name, col] of Object.entries(source.cols)) {
+    for (const [name, col] of Object.entries(source.cols || {})) {
       cols[name] = col.data;
       types[name] = col.type;
     }
     const payload = {
-      cols, types, n: source.n, dict: source.meta || frame.meta,
+      cols, types, n: source.n, dict: source.meta || (frame && frame.meta) || { nSongs: 0, nArtists: 0, nAlbums: 0 },
       at: Date.now(), fileNames: meta.fileNames, quality, settings: { ...settings },
       profile: opts.profile || "",
+      accountData: JSON.parse(JSON.stringify(accountData)),
     };
     await withStore("readwrite", (store) => store.put(payload, "current"));
     return { ok: true };
@@ -577,9 +576,9 @@ export async function saveCache(opts = {}) {
 export async function peekCache() {
   try {
     const payload = await withStore("readonly", (store) => store.get("current"));
-    if (!payload || !payload.n) return null;
+    if (!payload || (!payload.n && !payload.accountData)) return null;
     return {
-      n: payload.n,
+      n: payload.n || 0,
       savedAt: payload.at || 0,
       fileNames: payload.fileNames || [],
       profile: payload.profile || "",
@@ -596,7 +595,14 @@ export async function peekCache() {
 export async function loadCache() {
   try {
     const payload = await withStore("readonly", (store) => store.get("current"));
-    if (!payload || !payload.cols || !payload.n) return null;
+    if (!payload) return null;
+    if (payload.accountData) {
+      Object.assign(accountData, payload.accountData);
+    }
+    if (!payload.cols || !payload.n) {
+      if (hasAccountData()) return meta;
+      return null;
+    }
     const columns = {};
     for (const [name, data] of Object.entries(payload.cols)) {
       columns[name] = [data, (payload.types && payload.types[name]) || "s"];
@@ -721,7 +727,7 @@ export async function loadFiles(files, onProgress = () => {}) {
         done += 1;
         onProgress(done / total, `ZIP: ${entry.name.split("/").pop()}`);
       }
-      if (!entries.length) {
+      if (!entries.length && Object.keys(acc).length === 0) {
         // ZIP ohne passende Dateien: letzte Chance ueber den Dateinamen
         const all = await extractAnyZipJson(file);
         for (const data of all) {
@@ -746,9 +752,23 @@ export async function loadFiles(files, onProgress = () => {}) {
   }
 
   if (!builder.ts.length) {
+    if (hasData()) {
+      // Vorherige Streaming-Daten bleiben erhalten, nur Account-Daten wurden hinzugefügt
+      return { meta, quality, media, fromZip, streamingLoaded: true, accountOnly: false };
+    }
+    if (hasAccountData()) {
+      return {
+        meta: { years: [], total: 0, uniqueTracks: 0, savedAt: null, fileNames: names },
+        quality: { outliers: [], dropped: 0, includeOutliers: false, threshold: 0, earliest: null },
+        media: { music: 0, podcast: 0, audiobook: 0, hidden: 0, total: 0 },
+        fromZip,
+        streamingLoaded: false,
+        accountOnly: true,
+      };
+    }
     throw new Error(
-      "Keine Streaming-History gefunden. Erwartet werden Dateien wie " +
-      "Streaming_History_Audio_2024.json oder ein ZIP davon."
+      "Keine Streaming-History oder Kontodaten gefunden. Erwartet werden Dateien wie " +
+      "Streaming_History_Audio_*.json, YourLibrary.json oder ein Spotify-ZIP-Archiv."
     );
   }
 
@@ -769,7 +789,7 @@ export async function loadFiles(files, onProgress = () => {}) {
   };
   // Aktiven Kalender- und Medienmodus anwenden (UTC und "alles" sind Vorgabe)
   rebuildActiveFrame();
-  return { meta, quality, media, fromZip };
+  return { meta, quality, media, fromZip, streamingLoaded: true, accountOnly: false };
 }
 
 

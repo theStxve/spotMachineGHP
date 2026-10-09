@@ -65,7 +65,8 @@ window.fetch = async function shim(input, init = {}) {
   await cacheReady;
 
   // Kein Datenbestand und etwas, das ihn braucht: so antworten wie Flask mit 400.
-  if (!hasData() && ![
+  const isAccountRoute = parsed.pathname.startsWith("/api/account/");
+  if (!hasData() && !isAccountRoute && ![
     "/upload", "/clear", "/api/session_status", "/api/heartbeat", "/api/disconnect",
     "/api/cache/info", "/api/cache/restore", "/api/cache/clear", "/api/settings",
   ].includes(parsed.pathname)) {
