@@ -30,6 +30,13 @@ let accountData = {
   payments: [],
   userdata: {},
   follow: {},
+  marquee: [],
+  purchases: [],
+  wrapped: {},
+  messages: {},
+  support: [],
+  family: {},
+  voice: [],
 };
 
 export function getAccountData() {
@@ -49,8 +56,17 @@ export function getAccountStatus() {
     library_tracks_count: (accountData.library.tracks && accountData.library.tracks.length) || 0,
     has_playlists: accountData.playlists.length > 0,
     playlists_count: accountData.playlists.length,
-    has_payments: accountData.payments.length > 0,
-    payments_count: accountData.payments.length,
+    has_payments: accountData.payments.length > 0 || accountData.purchases.length > 0,
+    payments_count: accountData.payments.length + accountData.purchases.length,
+    has_follow: Boolean(Object.keys(accountData.follow).length > 0 || Object.keys(accountData.userdata).length > 0),
+    followers_count: (accountData.follow.userIsFollowedBy || accountData.follow.followers || []).length,
+    has_marquee: accountData.marquee.length > 0,
+    marquee_count: accountData.marquee.length,
+    has_wrapped: Boolean(Object.keys(accountData.wrapped).length > 0),
+    has_purchases: accountData.purchases.length > 0,
+    purchases_count: accountData.purchases.length,
+    has_userdata: Boolean(Object.keys(accountData.userdata).length > 0),
+    display_name: accountData.userdata.displayName || accountData.userdata.username || ""
   };
 }
 
@@ -640,6 +656,44 @@ export async function clearCache() {
 
 const decoder = new TextDecoder("utf-8");
 
+function ingestAccountEntry(k, v) {
+  const low = String(k || "").toLowerCase();
+  if (low.includes("search")) {
+    if (Array.isArray(v)) accountData.searches.push(...v);
+    else if (v && Array.isArray(v.searchQueries)) accountData.searches.push(...v.searchQueries);
+  } else if (low.includes("inference")) {
+    if (Array.isArray(v)) accountData.inferences.push(...v);
+    else if (v && Array.isArray(v.inferences)) accountData.inferences.push(...v.inferences);
+  } else if (low.includes("library")) {
+    if (typeof v === "object") accountData.library = v;
+  } else if (low.includes("playlist")) {
+    if (Array.isArray(v)) accountData.playlists.push(...v);
+    else if (v && Array.isArray(v.playlists)) accountData.playlists.push(...v.playlists);
+  } else if (low.includes("payment")) {
+    if (Array.isArray(v)) accountData.payments.push(...v);
+    else if (v && Array.isArray(v.payments)) accountData.payments.push(...v.payments);
+  } else if (low.includes("purchase")) {
+    if (Array.isArray(v)) accountData.purchases.push(...v);
+  } else if (low.includes("marquee")) {
+    if (Array.isArray(v)) accountData.marquee.push(...v);
+    else if (v && Array.isArray(v.marquees)) accountData.marquee.push(...v.marquees);
+  } else if (low.includes("wrapped")) {
+    if (typeof v === "object") Object.assign(accountData.wrapped, v);
+  } else if (low.includes("message")) {
+    if (typeof v === "object") Object.assign(accountData.messages, v);
+  } else if (low.includes("userattributes") || low.includes("userdata") || low.includes("identity")) {
+    if (typeof v === "object") Object.assign(accountData.userdata, v);
+  } else if (low.includes("follow")) {
+    if (typeof v === "object") Object.assign(accountData.follow, v);
+  } else if (low.includes("support")) {
+    if (Array.isArray(v)) accountData.support.push(...v);
+  } else if (low.includes("family")) {
+    if (typeof v === "object") accountData.family = v;
+  } else if (low.includes("voice")) {
+    if (Array.isArray(v)) accountData.voice.push(...v);
+  }
+}
+
 /**
  * Liest Dateien ein (ZIP oder einzelne JSON) und baut den Datensatz.
  * @param {File[]} files
@@ -659,25 +713,7 @@ export async function loadFiles(files, onProgress = () => {}) {
       const entries = res.history || [];
       const acc = res.account || {};
       for (const [k, v] of Object.entries(acc)) {
-        if (k.includes("search")) {
-          if (Array.isArray(v)) accountData.searches.push(...v);
-          else if (v && Array.isArray(v.searchQueries)) accountData.searches.push(...v.searchQueries);
-        } else if (k.includes("inference")) {
-          if (Array.isArray(v)) accountData.inferences.push(...v);
-          else if (v && Array.isArray(v.inferences)) accountData.inferences.push(...v.inferences);
-        } else if (k.includes("library")) {
-          if (typeof v === "object") accountData.library = v;
-        } else if (k.includes("playlist")) {
-          if (Array.isArray(v)) accountData.playlists.push(...v);
-          else if (v && Array.isArray(v.playlists)) accountData.playlists.push(...v.playlists);
-        } else if (k.includes("payment")) {
-          if (Array.isArray(v)) accountData.payments.push(...v);
-          else if (v && Array.isArray(v.payments)) accountData.payments.push(...v.payments);
-        } else if (k.includes("userdata")) {
-          if (typeof v === "object") accountData.userdata = v;
-        } else if (k.includes("follow")) {
-          if (typeof v === "object") accountData.follow = v;
-        }
+        ingestAccountEntry(k, v);
       }
       for (const entry of entries) {
         ingestRecords(builder, JSON.parse(decoder.decode(entry.bytes)));
@@ -701,25 +737,7 @@ export async function loadFiles(files, onProgress = () => {}) {
       } else {
         try {
           const v = JSON.parse(await file.text());
-          if (base.includes("search")) {
-            if (Array.isArray(v)) accountData.searches.push(...v);
-            else if (v && Array.isArray(v.searchQueries)) accountData.searches.push(...v.searchQueries);
-          } else if (base.includes("inference")) {
-            if (Array.isArray(v)) accountData.inferences.push(...v);
-            else if (v && Array.isArray(v.inferences)) accountData.inferences.push(...v.inferences);
-          } else if (base.includes("library")) {
-            if (typeof v === "object") accountData.library = v;
-          } else if (base.includes("playlist")) {
-            if (Array.isArray(v)) accountData.playlists.push(...v);
-            else if (v && Array.isArray(v.playlists)) accountData.playlists.push(...v.playlists);
-          } else if (base.includes("payment")) {
-            if (Array.isArray(v)) accountData.payments.push(...v);
-            else if (v && Array.isArray(v.payments)) accountData.payments.push(...v.payments);
-          } else if (base.includes("userdata")) {
-            if (typeof v === "object") accountData.userdata = v;
-          } else if (base.includes("follow")) {
-            if (typeof v === "object") accountData.follow = v;
-          }
+          ingestAccountEntry(base, v);
         } catch (e) {}
       }
       done += 1;

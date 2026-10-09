@@ -209,13 +209,22 @@ export async function extractZip(file) {
     if (/Streaming_History/i.test(base) || /endsong/i.test(base) || /StreamingHistory/i.test(base)) {
       history.push({ name, bytes: data });
     } else if (
-      base.includes("searchqueries") || base.includes("search_queries") ||
-      base.includes("inferences") ||
-      base.includes("yourlibrary") || base.includes("library") ||
+      base.includes("search") ||
+      base.includes("inference") ||
+      base.includes("library") ||
       base.includes("playlist") ||
-      base.includes("payments") || base.includes("payment") ||
-      base.includes("userdata") || base.includes("user_data") ||
-      base.includes("follow")
+      base.includes("payment") ||
+      base.includes("userattributes") || base.includes("userdata") || base.includes("identity") ||
+      base.includes("follow") ||
+      base.includes("marquee") ||
+      base.includes("purchase") ||
+      base.includes("wrapped") ||
+      base.includes("message") ||
+      base.includes("support") ||
+      base.includes("family") ||
+      base.includes("voice") ||
+      base.includes("podcast") ||
+      base.includes("location")
     ) {
       try {
         account[base] = JSON.parse(decoder.decode(data));

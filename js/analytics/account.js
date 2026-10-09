@@ -161,12 +161,14 @@ export function analyzeInferences(inferences, userdata) {
   })).sort((a, b) => b.count - a.count);
 
   const userInfo = hasUser ? {
+    displayName: userdata.displayName || userdata.username || "Spotify User",
     username: userdata.username || "Spotify User",
     country: userdata.country || "DE",
     creation_time: userdata.creationTime || "",
     birthdate: userdata.birthdate || "",
     gender: userdata.gender || "",
     postal_code: userdata.postalCode || "",
+    imageUrl: userdata.largeImageUrl || userdata.imageUrl || "",
   } : {};
 
   return {
@@ -369,5 +371,206 @@ export function analyzePayments(payments, frame) {
     cost_per_hour: costPerHour,
     cost_per_stream_cents: costPerStream,
     payments: list.sort((a, b) => b.date.localeCompare(a.date)),
+  };
+}
+
+
+export function analyzeFollow(follow, userdata) {
+  let followers = [];
+  let following = [];
+  let blocked = [];
+  if (follow && typeof follow === "object") {
+    followers = follow.userIsFollowedBy || follow.followers || follow.followerList || [];
+    following = follow.userIsFollowing || follow.following || follow.followingList || [];
+    blocked = follow.userIsBlocking || follow.blockedUsers || follow.blockedList || [];
+  }
+
+  const hasFollow = Boolean(followers.length || following.length || blocked.length);
+  const hasUser = Boolean(userdata && typeof userdata === "object" && Object.keys(userdata).length > 0);
+
+  if (!hasFollow && !hasUser) return { loaded: false };
+
+  const setFollowers = new Set(followers);
+  const mutual = following.filter(u => setFollowers.has(u)).sort();
+
+  const userInfo = hasUser ? {
+    displayName: userdata.displayName || userdata.username || "Spotify User",
+    username: userdata.username || "",
+    country: userdata.country || "DE",
+    creationTime: userdata.creationTime || "",
+    birthdate: userdata.birthdate || "",
+    gender: userdata.gender || "",
+    imageUrl: userdata.largeImageUrl || userdata.imageUrl || "",
+    tasteMaker: Boolean(userdata.tasteMaker),
+    email: userdata.email || "",
+  } : {};
+
+  return {
+    loaded: true,
+    followers_count: followers.length,
+    following_count: following.length,
+    blocked_count: blocked.length,
+    mutual_count: mutual.length,
+    followers,
+    following,
+    mutual,
+    blocked,
+    user_info: userInfo,
+  };
+}
+
+export function analyzeMarquee(marquee) {
+  if (!marquee || !Array.isArray(marquee) || !marquee.length) return { loaded: false };
+
+  const segmentsMap = new Map();
+  const artistsBySegment = new Map();
+  const cleaned = [];
+
+  for (let i = 0; i < marquee.length; i++) {
+    const item = marquee[i];
+    const artist = String(item.artistName || "").trim();
+    const segment = String(item.segment || "Sonstige").trim();
+    if (!artist) continue;
+
+    segmentsMap.set(segment, (segmentsMap.get(segment) || 0) + 1);
+    if (!artistsBySegment.has(segment)) artistsBySegment.set(segment, []);
+    artistsBySegment.get(segment).push(artist);
+    cleaned.push({ artist, segment });
+  }
+
+  const total = cleaned.length;
+  const order = ["Super Listeners", "Moderate listeners", "Light listeners", "Previously Active Listeners"];
+  const segmentStats = [];
+  const seen = new Set();
+
+  for (const s of order) {
+    if (segmentsMap.has(s)) {
+      seen.add(s);
+      const count = segmentsMap.get(s);
+      segmentStats.push({
+        segment: s,
+        count,
+        percentage: Math.round((count / total) * 1000) / 10,
+        sample_artists: (artistsBySegment.get(s) || []).slice(0, 30).sort(),
+      });
+    }
+  }
+
+  for (const [s, count] of segmentsMap.entries()) {
+    if (!seen.has(s)) {
+      segmentStats.push({
+        segment: s,
+        count,
+        percentage: Math.round((count / total) * 1000) / 10,
+        sample_artists: (artistsBySegment.get(s) || []).slice(0, 30).sort(),
+      });
+    }
+  }
+
+  return {
+    loaded: true,
+    total_artists: total,
+    segments: segmentStats,
+    super_listeners: (artistsBySegment.get("Super Listeners") || []).sort(),
+    super_count: (artistsBySegment.get("Super Listeners") || []).length,
+    moderate_count: (artistsBySegment.get("Moderate listeners") || []).length,
+    light_count: (artistsBySegment.get("Light listeners") || []).length,
+    inactive_count: (artistsBySegment.get("Previously Active Listeners") || []).length,
+    all_artists: cleaned.slice(0, 2000),
+  };
+}
+
+export function analyzeWrapped(wrappedData) {
+  if (!wrappedData || typeof wrappedData !== "object" || !Object.keys(wrappedData).length) {
+    return { loaded: false };
+  }
+
+  const metrics = wrappedData.yearlyMetrics || {};
+  const totalMs = Number(metrics.totalMsListened) || 0;
+  const totalMinutes = Math.round((totalMs / 60000) * 10) / 10;
+  const totalHours = Math.round((totalMs / 3600000) * 10) / 10;
+
+  const listeningAge = wrappedData.listeningAge || {};
+  const clubs = wrappedData.clubs || {};
+  const party = wrappedData.party || {};
+
+  const tempo = party.weightedMsAvgTempo;
+  const avgTempo = tempo != null ? Math.round(Number(tempo) * 10) / 10 : null;
+
+  const popularity = party.avgTrackPopularityScore;
+  const avgPop = popularity != null ? Math.round(Number(popularity) * 1000) / 10 : null;
+
+  const shares = party.numSharesAllContent || 0;
+  const topTracks = (wrappedData.topTracks && wrappedData.topTracks.topTracks) || [];
+  const uniqueTracks = (wrappedData.topTracks && wrappedData.topTracks.numUniqueTracks) || 0;
+
+  const clubName = String(clubs.userClub || "").replace(/_/g, " ");
+  const clubRole = String(clubs.role || "");
+
+  return {
+    loaded: true,
+    total_minutes: totalMinutes,
+    total_hours: totalHours,
+    listening_age: listeningAge.listeningAge || null,
+    window_start_year: listeningAge.windowStartYear || null,
+    user_club: clubName || "Musik-Club",
+    club_role: clubRole || "Mitglied",
+    club_percent: clubs.percentInClub ? Math.round(Number(clubs.percentInClub) * 1000) / 10 : null,
+    avg_tempo_bpm: avgTempo,
+    avg_popularity: avgPop,
+    shares_count: shares,
+    top_tracks_count: topTracks.length,
+    unique_tracks: uniqueTracks,
+    top_fan: (wrappedData.topFanLeaderboard && wrappedData.topFanLeaderboard.ownUserStats) || {},
+  };
+}
+
+export function analyzePurchases(purchases) {
+  if (!purchases || !Array.isArray(purchases) || !purchases.length) return { loaded: false };
+
+  let totalSpent = 0;
+  let currency = "USD";
+  const itemsList = [];
+  const ordersList = [];
+
+  for (let i = 0; i < purchases.length; i++) {
+    const p = purchases[i];
+    const priceSet = p.currentTotalPriceSet || {};
+    const amt = parseFloat(priceSet.amount) || 0;
+    const curr = priceSet.currencyCode || "USD";
+    currency = curr;
+    totalSpent += amt;
+    const created = String(p.createdAt || "").slice(0, 10);
+    const status = String(p.displayFulfillmentStatus || "Fulfilled");
+
+    const lines = [];
+    const lineItems = Array.isArray(p.lineItems) ? p.lineItems : [];
+    for (let j = 0; j < lineItems.length; j++) {
+      const it = lineItems[j];
+      const title = it.title || it.name || "Merch Item";
+      const itAmt = parseFloat(it.originalTotalSet && it.originalTotalSet.amount) || 0;
+      lines.push({ title, amount: itAmt });
+      itemsList.push({ title, amount: itAmt, currency: curr, date: created });
+    }
+
+    const orderId = String(p.id || "").split("/").pop();
+    ordersList.push({
+      id: orderId,
+      date: created,
+      amount: Math.round(amt * 100) / 100,
+      currency: curr,
+      status,
+      items: lines,
+    });
+  }
+
+  return {
+    loaded: true,
+    total_spent: Math.round(totalSpent * 100) / 100,
+    currency,
+    orders_count: ordersList.length,
+    items_count: itemsList.length,
+    items: itemsList,
+    orders: ordersList,
   };
 }

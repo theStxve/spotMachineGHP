@@ -112,6 +112,9 @@
       <button class="tab-btn" data-tab="searches"><i data-lucide="search-check"></i> Suchanfragen</button>
       <button class="tab-btn" data-tab="inferences"><i data-lucide="brain"></i> Geschmacksprofil</button>
       <button class="tab-btn" data-tab="library"><i data-lucide="library"></i> Bibliothek &amp; Playlists</button>
+      <button class="tab-btn" data-tab="marquee"><i data-lucide="target"></i> Hörertypen &amp; Marketing</button>
+      <button class="tab-btn" data-tab="profile"><i data-lucide="users"></i> Profil &amp; Follower</button>
+      <button class="tab-btn" data-tab="wrapped"><i data-lucide="gift"></i> Wrapped-Archiv</button>
 
     </nav>
 
@@ -1187,6 +1190,240 @@
           <div id="playlists-duplicates-card" class="hidden" style="border-top:1px solid var(--border); padding-top:1rem;">
             <h4 style="font-size:0.9rem; margin-bottom:0.5rem; color:var(--muted);">Gefundene Playlist-Duplikate:</h4>
             <div id="playlists-duplicates-list" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- TAB: Hörertypen & Marketing (Marquee) -->
+    <div class="tab-panel hidden card" id="panel-marquee">
+      <!-- Empty State -->
+      <div id="marquee-empty-state" style="background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:2rem; text-align:center; max-width:650px; margin:2rem auto;">
+        <div style="font-size:2.5rem; margin-bottom:0.75rem;">🎯</div>
+        <h3 style="font-size:1.25rem; margin-bottom:0.5rem;">Hörertypen-Daten nicht im Datensatz</h3>
+        <p style="color:var(--muted); font-size:0.88rem; line-height:1.5; margin-bottom:1.25rem;">
+          In der Datei <code>Marquee.json</code> stuft Spotify dich für tausende Künstler in Hörer-Segmente ein:<br>
+          <strong>Super Listeners</strong> (deine absoluten Top-Artists), <strong>Moderate</strong>, <strong>Light</strong> und <strong>Previously Active</strong> (früher gehört, heute inaktiv).
+        </p>
+        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+          <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
+        </a>
+      </div>
+
+      <!-- Loaded Content -->
+      <div id="marquee-content" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:0.5rem;">
+          <div>
+            <h2 style="font-size:1.3rem; display:flex; align-items:center; gap:0.5rem; margin:0 0 0.25rem 0;">
+              <i data-lucide="target" style="color:var(--green);"></i> Spotifys Hörertypen &amp; Künstler-Marketing
+            </h2>
+            <p style="font-size:0.82rem; color:var(--muted); margin:0;">
+              Spotifys internes Marquee-System stuft dich für jeden Künstler in Marketing-Segmente ein.
+            </p>
+          </div>
+        </div>
+
+        <div class="stats-grid" id="marquee-stats-grid">
+          <div class="stat-card">
+            <h4>Kategorisierte Artists</h4>
+            <div class="val" id="marquee-total">-</div>
+          </div>
+          <div class="stat-card" style="border-left:3px solid #1db954;">
+            <h4>🌟 Super Listeners</h4>
+            <div class="val" id="marquee-super" style="color:var(--green);">-</div>
+          </div>
+          <div class="stat-card" style="border-left:3px solid #5b8def;">
+            <h4>🎧 Moderate Listeners</h4>
+            <div class="val" id="marquee-moderate" style="color:#5b8def;">-</div>
+          </div>
+          <div class="stat-card" style="border-left:3px solid #ff9f43;">
+            <h4>⏳ Inaktive Listeners</h4>
+            <div class="val" id="marquee-inactive" style="color:#ff9f43;">-</div>
+          </div>
+        </div>
+
+        <!-- Super Listeners Spotlight -->
+        <div id="marquee-super-spotlight" style="background:rgba(29,185,84,0.08); border:1px solid rgba(29,185,84,0.3); border-radius:10px; padding:1.1rem; margin:1.5rem 0;">
+          <h3 style="font-size:1.05rem; color:var(--green); display:flex; align-items:center; gap:0.4rem; margin:0 0 0.35rem 0;">
+            <i data-lucide="sparkles" style="width:17px;height:17px;"></i> Deine „Super Listener"-Elite
+          </h3>
+          <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.85rem 0;">
+            Für diese Künstler zählst du laut Spotify zum härtesten Kern der Fanbase:
+          </p>
+          <div id="marquee-super-chips" style="display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
+        </div>
+
+        <!-- Chart & Filtered Table -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:1.25rem; margin-bottom:1.5rem;">
+          <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1rem;">
+            <h4 style="font-size:0.9rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.4rem;">
+              <i data-lucide="pie-chart" style="width:14px;height:14px;color:var(--green);"></i> Segment-Verteilung
+            </h4>
+            <div style="height:240px;"><canvas id="marquee-segment-chart"></canvas></div>
+          </div>
+          <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
+              <h4 style="font-size:0.9rem; margin:0; display:flex; align-items:center; gap:0.4rem;">
+                <i data-lucide="list" style="width:14px;height:14px;color:var(--green);"></i> Alle Künstler durchsuchen
+              </h4>
+              <input type="text" id="marquee-search-input" placeholder="Artist suchen..." style="max-width:200px; font-size:0.8rem; padding:0.35rem 0.6rem;" />
+            </div>
+            <!-- Segment Filter Pills -->
+            <div id="marquee-filter-pills" style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+              <button class="btn btn-outline active-pill" data-segment="all" style="font-size:0.75rem; padding:0.25rem 0.55rem;">Alle</button>
+              <button class="btn btn-outline" data-segment="Super Listeners" style="font-size:0.75rem; padding:0.25rem 0.55rem;">Super</button>
+              <button class="btn btn-outline" data-segment="Moderate listeners" style="font-size:0.75rem; padding:0.25rem 0.55rem;">Moderate</button>
+              <button class="btn btn-outline" data-segment="Light listeners" style="font-size:0.75rem; padding:0.25rem 0.55rem;">Light</button>
+              <button class="btn btn-outline" data-segment="Previously Active Listeners" style="font-size:0.75rem; padding:0.25rem 0.55rem;">Inaktiv</button>
+            </div>
+            <div style="max-height:280px; overflow-y:auto;">
+              <table class="data-table" style="width:100%; font-size:0.82rem;">
+                <thead><tr><th>Künstler</th><th style="width:150px;">Einstufung</th></tr></thead>
+                <tbody id="marquee-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- TAB: Profil & Follower -->
+    <div class="tab-panel hidden card" id="panel-profile">
+      <!-- Empty State -->
+      <div id="profile-empty-state" style="background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:2rem; text-align:center; max-width:650px; margin:2rem auto;">
+        <div style="font-size:2.5rem; margin-bottom:0.75rem;">👥</div>
+        <h3 style="font-size:1.25rem; margin-bottom:0.5rem;">Profildaten &amp; Follower nicht im Datensatz</h3>
+        <p style="color:var(--muted); font-size:0.88rem; line-height:1.5; margin-bottom:1.25rem;">
+          Zeigt dein Spotify-Profil (<code>UserAttributes.json</code>, <code>Identity.json</code>), deine Follower, Accounts denen du folgst und <strong>gegenseitige Freunde</strong> (<code>Follow.json</code>).
+        </p>
+        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+          <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
+        </a>
+      </div>
+
+      <!-- Loaded Content -->
+      <div id="profile-content" class="hidden">
+        <!-- User Profile Card -->
+        <div id="profile-user-card" style="background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:1.25rem; margin-bottom:1.5rem; display:flex; align-items:center; gap:1.25rem; flex-wrap:wrap;">
+          <img id="profile-avatar" src="" alt="Avatar" style="width:72px; height:72px; border-radius:50%; object-fit:cover; border:2px solid var(--green); display:none;" />
+          <div style="flex:1; min-width:200px;">
+            <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+              <h2 id="profile-display-name" style="font-size:1.4rem; margin:0; color:var(--text);">Spotify User</h2>
+              <span id="profile-badge-tastemaker" class="hidden tag-pill" style="background:rgba(29,185,84,0.15); color:var(--green); border-color:var(--green); font-size:0.72rem;">TasteMaker</span>
+            </div>
+            <div id="profile-details-row" style="display:flex; gap:1rem; flex-wrap:wrap; font-size:0.82rem; color:var(--muted); margin-top:0.4rem;">
+              <span id="profile-country"><i data-lucide="globe" style="width:13px;height:13px;display:inline;"></i> Land: -</span>
+              <span id="profile-created"><i data-lucide="calendar" style="width:13px;height:13px;display:inline;"></i> Seit: -</span>
+              <span id="profile-birthdate"><i data-lucide="cake" style="width:13px;height:13px;display:inline;"></i> Geboren: -</span>
+              <span id="profile-gender"><i data-lucide="user" style="width:13px;height:13px;display:inline;"></i> Geschlecht: -</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-grid" id="profile-stats-grid">
+          <div class="stat-card">
+            <h4>Follower</h4>
+            <div class="val" id="profile-followers-count" style="color:var(--green);">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>Du folgst</h4>
+            <div class="val" id="profile-following-count">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>Gegenseitige Freunde</h4>
+            <div class="val" id="profile-mutual-count" style="color:#5b8def;">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>Blockiert</h4>
+            <div class="val" id="profile-blocked-count" style="color:var(--muted);">-</div>
+          </div>
+        </div>
+
+        <!-- 2 Columns: Following & Followers -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1.25rem; margin-top:1.5rem;">
+          <!-- Followers -->
+          <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.1rem;">
+            <h3 style="font-size:1rem; margin:0 0 0.85rem 0; display:flex; align-items:center; gap:0.4rem;">
+              <i data-lucide="user-check" style="width:16px;height:16px;color:var(--green);"></i> Deine Follower
+            </h3>
+            <div id="profile-followers-list" style="display:flex; flex-direction:column; gap:0.45rem;"></div>
+          </div>
+
+          <!-- Following -->
+          <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.1rem;">
+            <h3 style="font-size:1rem; margin:0 0 0.85rem 0; display:flex; align-items:center; gap:0.4rem;">
+              <i data-lucide="user-plus" style="width:16px;height:16px;color:#5b8def;"></i> Konten, denen du folgst
+            </h3>
+            <div id="profile-following-list" style="display:flex; flex-direction:column; gap:0.45rem;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- TAB: Wrapped-Archiv -->
+    <div class="tab-panel hidden card" id="panel-wrapped">
+      <!-- Empty State -->
+      <div id="wrapped-empty-state" style="background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:2rem; text-align:center; max-width:650px; margin:2rem auto;">
+        <div style="font-size:2.5rem; margin-bottom:0.75rem;">🎁</div>
+        <h3 style="font-size:1.25rem; margin-bottom:0.5rem;">Wrapped-Daten nicht im Datensatz</h3>
+        <p style="color:var(--muted); font-size:0.88rem; line-height:1.5; margin-bottom:1.25rem;">
+          Dieser Tab zeigt dein offizielles <strong>Spotify Wrapped</strong> (aus <code>Wrapped*.json</code>) inklusive Hör-Alter, deinem Musik-Club, Durchschnitts-Tempo (BPM) und Jahres-Minuten.
+        </p>
+        <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+          <i data-lucide="external-link"></i> Kontodaten anfordern (Datenschutz-Center)
+        </a>
+      </div>
+
+      <!-- Loaded Content -->
+      <div id="wrapped-content" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:0.5rem;">
+          <div>
+            <h2 style="font-size:1.3rem; display:flex; align-items:center; gap:0.5rem; margin:0 0 0.25rem 0;">
+              <i data-lucide="gift" style="color:var(--green);"></i> Offizielles Spotify Wrapped-Archiv
+            </h2>
+            <p style="font-size:0.82rem; color:var(--muted); margin:0;">
+              Die Rohdaten hinter deiner Spotify-Wrapped Story — Tempo, Hör-Alter und Metriken.
+            </p>
+          </div>
+        </div>
+
+        <div class="stats-grid" id="wrapped-stats-grid">
+          <div class="stat-card">
+            <h4>Jahres-Hörzeit</h4>
+            <div class="val" id="wrapped-minutes" style="color:var(--green);">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>Dein Hör-Alter</h4>
+            <div class="val" id="wrapped-age">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>Spotify-Club</h4>
+            <div class="val" id="wrapped-club" style="font-size:1.15rem; color:#5b8def;">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>Durchschnitts-Tempo</h4>
+            <div class="val" id="wrapped-tempo" style="font-size:1.15rem;">-</div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:1rem; margin-top:1.5rem;">
+          <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.1rem;">
+            <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.25rem;">Popularitäts-Index</div>
+            <div id="wrapped-popularity" style="font-size:1.4rem; font-weight:700; color:var(--text);">-</div>
+            <p style="font-size:0.75rem; color:var(--muted); margin:0.35rem 0 0 0;">Wie mainstream vs. nischig deine gehörten Songs sind.</p>
+          </div>
+          <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.1rem;">
+            <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.25rem;">Geteilte Inhalte (Shares)</div>
+            <div id="wrapped-shares" style="font-size:1.4rem; font-weight:700; color:var(--text);">-</div>
+            <p style="font-size:0.75rem; color:var(--muted); margin:0.35rem 0 0 0;">Wie oft du Songs oder Links geteilt hast.</p>
+          </div>
+          <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.1rem;">
+            <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.25rem;">Club-Rolle</div>
+            <div id="wrapped-role" style="font-size:1.4rem; font-weight:700; color:#5b8def;">-</div>
+            <p id="wrapped-club-hint" style="font-size:0.75rem; color:var(--muted); margin:0.35rem 0 0 0;">Deine Einstufung im Hörer-Kollektiv.</p>
           </div>
         </div>
       </div>

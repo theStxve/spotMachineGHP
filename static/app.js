@@ -163,6 +163,9 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (state.activeTab === 'searches') loadSearchesTab();
     if (state.activeTab === 'inferences') loadInferencesTab();
     if (state.activeTab === 'library') loadLibraryTab();
+    if (state.activeTab === 'marquee') loadMarqueeTab();
+    if (state.activeTab === 'profile') loadProfileTab();
+    if (state.activeTab === 'wrapped') loadWrappedTab();
   });
 });
 
@@ -3685,7 +3688,18 @@ async function loadInferencesTab() {
     const countryEl = document.getElementById("inferences-country");
     if (countryEl) countryEl.textContent = userInfo.country || "DE";
     const createdEl = document.getElementById("inferences-created");
-    if (createdEl) createdEl.textContent = userInfo.creation_time ? userInfo.creation_time.split("T")[0] : "Spotify User";
+    if (createdEl) {
+      const ct = userInfo.creation_time;
+      if (ct) {
+        try {
+          const d = new Date(ct);
+          const months = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+          createdEl.textContent = `seit ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+        } catch(e) { createdEl.textContent = ct.split("T")[0]; }
+      } else {
+        createdEl.textContent = userInfo.username || "-";
+      }
+    }
 
     // Payments Section
     const paySec = document.getElementById("payments-section");
@@ -3870,6 +3884,302 @@ async function loadLibraryTab() {
   } catch (e) {
     hideLoader();
     console.error("Error loading library:", e);
+    if (emptyState) emptyState.classList.remove("hidden");
+    if (content) content.classList.add("hidden");
+    lucide.createIcons();
+  }
+}
+
+
+// ── 4. HÖRERTYPEN & MARKETING TAB (MARQUEE) ──
+let _marqueeRawData = null;
+let _marqueeChartInstance = null;
+let _marqueeActiveSegment = "all";
+
+async function loadMarqueeTab() {
+  const emptyState = document.getElementById("marquee-empty-state");
+  const content = document.getElementById("marquee-content");
+  showLoader("Lade Hörertypen & Marketing...");
+  try {
+    const data = await apiCall("/api/account/marquee");
+    hideLoader();
+
+    if (!data || !data.loaded) {
+      if (emptyState) emptyState.classList.remove("hidden");
+      if (content) content.classList.add("hidden");
+      lucide.createIcons();
+      return;
+    }
+
+    _marqueeRawData = data;
+    if (emptyState) emptyState.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+
+    // Stats
+    const totalEl = document.getElementById("marquee-total");
+    if (totalEl) totalEl.textContent = (data.total_artists || 0).toLocaleString();
+    const superEl = document.getElementById("marquee-super");
+    if (superEl) superEl.textContent = (data.super_count || 0).toLocaleString();
+    const modEl = document.getElementById("marquee-moderate");
+    if (modEl) modEl.textContent = (data.moderate_count || 0).toLocaleString();
+    const inactEl = document.getElementById("marquee-inactive");
+    if (inactEl) inactEl.textContent = (data.inactive_count || 0).toLocaleString();
+
+    // Super Listeners Chips
+    const chipsEl = document.getElementById("marquee-super-chips");
+    if (chipsEl) {
+      chipsEl.innerHTML = (data.super_listeners || []).map(a => `
+        <span class="tag-pill" style="font-size:0.8rem; padding:0.3rem 0.65rem; background:rgba(29,185,84,0.15); border-color:var(--green); color:var(--text); font-weight:600;">
+          🌟 ${a}
+        </span>
+      `).join("");
+    }
+
+    // Chart
+    const ctx = document.getElementById("marquee-segment-chart");
+    if (ctx && data.segments) {
+      if (_marqueeChartInstance) _marqueeChartInstance.destroy();
+      const labels = data.segments.map(s => s.segment);
+      const counts = data.segments.map(s => s.count);
+      const colors = ["#1db954", "#5b8def", "#9b59b6", "#ff9f43", "#718096"];
+      _marqueeChartInstance = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels,
+          datasets: [{
+            data: counts,
+            backgroundColor: colors.slice(0, labels.length),
+            borderWidth: 0,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "right", labels: { color: "#b3b3b3", font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${ctx.label}: ${ctx.raw} Artists`
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Table render
+    _renderMarqueeTable();
+
+    // Pills listener
+    document.querySelectorAll("#marquee-filter-pills button").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll("#marquee-filter-pills button").forEach(b => b.classList.remove("active-pill"));
+        btn.classList.add("active-pill");
+        _marqueeActiveSegment = btn.getAttribute("data-segment");
+        _renderMarqueeTable();
+      };
+    });
+
+    document.getElementById("marquee-search-input")?.addEventListener("input", () => {
+      _renderMarqueeTable();
+    });
+
+    lucide.createIcons();
+  } catch (e) {
+    hideLoader();
+    console.error("Error loading marquee:", e);
+    if (emptyState) emptyState.classList.remove("hidden");
+    if (content) content.classList.add("hidden");
+    lucide.createIcons();
+  }
+}
+
+function _renderMarqueeTable() {
+  if (!_marqueeRawData || !_marqueeRawData.all_artists) return;
+  const tbody = document.getElementById("marquee-table-body");
+  if (!tbody) return;
+
+  const search = (document.getElementById("marquee-search-input")?.value || "").toLowerCase().trim();
+  let list = _marqueeRawData.all_artists;
+
+  if (_marqueeActiveSegment !== "all") {
+    list = list.filter(item => item.segment === _marqueeActiveSegment);
+  }
+  if (search) {
+    list = list.filter(item => item.artist.toLowerCase().includes(search));
+  }
+
+  const segmentColors = {
+    "Super Listeners": "background:rgba(29,185,84,0.15); color:var(--green);",
+    "Moderate listeners": "background:rgba(91,141,239,0.15); color:#5b8def;",
+    "Light listeners": "background:rgba(155,89,182,0.15); color:#9b59b6;",
+    "Previously Active Listeners": "background:rgba(255,159,67,0.15); color:#ff9f43;",
+  };
+
+  tbody.innerHTML = list.slice(0, 150).map(item => `
+    <tr>
+      <td style="font-weight:600; color:var(--text);">${item.artist}</td>
+      <td>
+        <span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.74rem; font-weight:600; ${segmentColors[item.segment] || 'background:rgba(255,255,255,0.06); color:var(--muted);'}">
+          ${item.segment}
+        </span>
+      </td>
+    </tr>
+  `).join("");
+}
+
+// ── 5. PROFIL & FOLLOWER TAB ──
+async function loadProfileTab() {
+  const emptyState = document.getElementById("profile-empty-state");
+  const content = document.getElementById("profile-content");
+  showLoader("Lade Profil & Follower...");
+  try {
+    const data = await apiCall("/api/account/follow");
+    hideLoader();
+
+    if (!data || !data.loaded) {
+      if (emptyState) emptyState.classList.remove("hidden");
+      if (content) content.classList.add("hidden");
+      lucide.createIcons();
+      return;
+    }
+
+    if (emptyState) emptyState.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+
+    const u = data.user_info || {};
+    // Avatar
+    const avatarImg = document.getElementById("profile-avatar");
+    if (avatarImg) {
+      if (u.imageUrl) {
+        avatarImg.src = u.imageUrl;
+        avatarImg.style.display = "block";
+      } else {
+        avatarImg.style.display = "none";
+      }
+    }
+
+    // Details
+    const nameEl = document.getElementById("profile-display-name");
+    if (nameEl) nameEl.textContent = u.displayName || u.username || "Spotify User";
+    const tasteBadge = document.getElementById("profile-badge-tastemaker");
+    if (tasteBadge) {
+      if (u.tasteMaker) tasteBadge.classList.remove("hidden");
+      else tasteBadge.classList.add("hidden");
+    }
+
+    const cEl = document.getElementById("profile-country");
+    if (cEl) cEl.textContent = `Land: ${u.country || "DE"}`;
+    const crEl = document.getElementById("profile-created");
+    if (crEl) {
+      if (u.creationTime) {
+        try {
+          const dt = new Date(u.creationTime);
+          const months = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+          crEl.textContent = `Dabei seit: ${months[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+        } catch(e) { crEl.textContent = `Dabei seit: ${u.creationTime}`; }
+      } else { crEl.textContent = "Dabei seit: -"; }
+    }
+    const bEl = document.getElementById("profile-birthdate");
+    if (bEl) bEl.textContent = u.birthdate ? `Geboren: ${u.birthdate.slice(0, 4)}` : "Geboren: -";
+    const gEl = document.getElementById("profile-gender");
+    if (gEl) gEl.textContent = u.gender ? `Geschlecht: ${u.gender === "male" ? "Männlich" : (u.gender === "female" ? "Weiblich" : u.gender)}` : "Geschlecht: -";
+
+    // Stats
+    const fCountEl = document.getElementById("profile-followers-count");
+    if (fCountEl) fCountEl.textContent = (data.followers_count || 0).toLocaleString();
+    const fgCountEl = document.getElementById("profile-following-count");
+    if (fgCountEl) fgCountEl.textContent = (data.following_count || 0).toLocaleString();
+    const mutCountEl = document.getElementById("profile-mutual-count");
+    if (mutCountEl) mutCountEl.textContent = (data.mutual_count || 0).toLocaleString();
+    const blkCountEl = document.getElementById("profile-blocked-count");
+    if (blkCountEl) blkCountEl.textContent = (data.blocked_count || 0).toLocaleString();
+
+    const mutualSet = new Set(data.mutual || []);
+
+    // Followers List
+    const fListEl = document.getElementById("profile-followers-list");
+    if (fListEl) {
+      if (data.followers && data.followers.length) {
+        fListEl.innerHTML = data.followers.map(name => `
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:0.45rem 0.75rem; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:600; color:var(--text); font-size:0.85rem;">${name}</span>
+            ${mutualSet.has(name) ? '<span class="tag-pill" style="font-size:0.7rem; padding:0.15rem 0.45rem; background:rgba(91,141,239,0.15); color:#5b8def; border-color:#5b8def;">Freund</span>' : ''}
+          </div>
+        `).join("");
+      } else {
+        fListEl.innerHTML = '<div style="color:var(--muted); font-size:0.8rem; padding:1rem 0;">Keine Follower gefunden.</div>';
+      }
+    }
+
+    // Following List
+    const fgListEl = document.getElementById("profile-following-list");
+    if (fgListEl) {
+      if (data.following && data.following.length) {
+        fgListEl.innerHTML = data.following.map(name => `
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:0.45rem 0.75rem; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:600; color:var(--text); font-size:0.85rem;">${name}</span>
+            ${mutualSet.has(name) ? '<span class="tag-pill" style="font-size:0.7rem; padding:0.15rem 0.45rem; background:rgba(91,141,239,0.15); color:#5b8def; border-color:#5b8def;">Freund</span>' : ''}
+          </div>
+        `).join("");
+      } else {
+        fgListEl.innerHTML = '<div style="color:var(--muted); font-size:0.8rem; padding:1rem 0;">Du folgst noch keinen Konten.</div>';
+      }
+    }
+
+    lucide.createIcons();
+  } catch (e) {
+    hideLoader();
+    console.error("Error loading profile:", e);
+    if (emptyState) emptyState.classList.remove("hidden");
+    if (content) content.classList.add("hidden");
+    lucide.createIcons();
+  }
+}
+
+// ── 6. WRAPPED TAB ──
+async function loadWrappedTab() {
+  const emptyState = document.getElementById("wrapped-empty-state");
+  const content = document.getElementById("wrapped-content");
+  showLoader("Lade Wrapped-Archiv...");
+  try {
+    const data = await apiCall("/api/account/wrapped");
+    hideLoader();
+
+    if (!data || !data.loaded) {
+      if (emptyState) emptyState.classList.remove("hidden");
+      if (content) content.classList.add("hidden");
+      lucide.createIcons();
+      return;
+    }
+
+    if (emptyState) emptyState.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+
+    const minEl = document.getElementById("wrapped-minutes");
+    if (minEl) minEl.innerHTML = `${Math.round(data.total_minutes).toLocaleString()} <span style="font-size:0.85rem; color:var(--muted); font-weight:normal;">Minuten (~${data.total_hours} h)</span>`;
+    const ageEl = document.getElementById("wrapped-age");
+    if (ageEl) ageEl.textContent = data.listening_age ? `${data.listening_age} Jahre` : "-";
+    const clubEl = document.getElementById("wrapped-club");
+    if (clubEl) clubEl.textContent = data.user_club || "-";
+    const tempoEl = document.getElementById("wrapped-tempo");
+    if (tempoEl) tempoEl.textContent = data.avg_tempo_bpm ? `${data.avg_tempo_bpm} BPM` : "-";
+
+    const popEl = document.getElementById("wrapped-popularity");
+    if (popEl) popEl.textContent = data.avg_popularity !== null ? `${data.avg_popularity} %` : "-";
+    const shEl = document.getElementById("wrapped-shares");
+    if (shEl) shEl.textContent = (data.shares_count || 0).toLocaleString();
+    const roleEl = document.getElementById("wrapped-role");
+    if (roleEl) roleEl.textContent = data.club_role || "Mitglied";
+    const hintEl = document.getElementById("wrapped-club-hint");
+    if (hintEl && data.club_percent) {
+      hintEl.textContent = `Du gehörst zu den Top ${data.club_percent} % in deinem Club.`;
+    }
+
+    lucide.createIcons();
+  } catch (e) {
+    hideLoader();
+    console.error("Error loading wrapped:", e);
     if (emptyState) emptyState.classList.remove("hidden");
     if (content) content.classList.add("hidden");
     lucide.createIcons();

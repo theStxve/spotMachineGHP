@@ -15,6 +15,7 @@ import {
 } from "./core/store.js";
 import {
   analyzeSearches, analyzeInferences, analyzeLibrary, analyzePlaylists, analyzePayments,
+  analyzeFollow, analyzeMarquee, analyzeWrapped, analyzePurchases,
 } from "./analytics/account.js";
 import { get_available_years, get_all_artists, recommend } from "./analytics/core.js";
 import { get_top_songs } from "./analytics/topsongs.js";
@@ -208,7 +209,37 @@ export async function handleRequest(method, url, body, query) {
 
   if (path === "/api/account/payments" && method === "GET") {
     const frame = hasData() ? getFrame() : null;
-    return analyzePayments(getAccountData().payments, frame);
+    const res = analyzePayments(getAccountData().payments, frame);
+    const purchases = getAccountData().purchases || [];
+    if (purchases.length) {
+      const pRes = analyzePurchases(purchases);
+      res.has_purchases = true;
+      res.merch_spent = pRes.total_spent;
+      res.merch_orders = pRes.orders;
+      res.merch_currency = pRes.currency;
+      if (!res.loaded) {
+        res.loaded = true;
+        res.total_spent = pRes.total_spent;
+        res.currency = pRes.currency;
+      }
+    }
+    return res;
+  }
+
+  if (path === "/api/account/follow" && method === "GET") {
+    return analyzeFollow(getAccountData().follow, getAccountData().userdata);
+  }
+
+  if (path === "/api/account/marquee" && method === "GET") {
+    return analyzeMarquee(getAccountData().marquee);
+  }
+
+  if (path === "/api/account/wrapped" && method === "GET") {
+    return analyzeWrapped(getAccountData().wrapped);
+  }
+
+  if (path === "/api/account/purchases" && method === "GET") {
+    return analyzePurchases(getAccountData().purchases);
   }
 
   // ── Empfehlungen & Grunddaten ─────────────────────────────────────────────
