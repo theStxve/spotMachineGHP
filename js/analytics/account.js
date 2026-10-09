@@ -553,8 +553,16 @@ export function analyzePurchases(purchases) {
       const it = lineItems[j];
       const title = it.title || it.name || "Merch Item";
       const itAmt = parseFloat(it.originalTotalSet && it.originalTotalSet.amount) || 0;
+      const shipping = Math.round(Math.max(0, amt - itAmt) * 100) / 100;
       lines.push({ title, amount: itAmt });
-      itemsList.push({ title, amount: itAmt, currency: curr, date: created });
+      itemsList.push({
+        title,
+        amount: itAmt,
+        currency: curr,
+        date: created,
+        order_total: amt,
+        shipping,
+      });
     }
 
     const orderId = String(p.id || "").split("/").pop();
@@ -568,9 +576,16 @@ export function analyzePurchases(purchases) {
     });
   }
 
+  let subtotalItems = 0;
+  for (let i = 0; i < itemsList.length; i++) subtotalItems += itemsList[i].amount;
+  subtotalItems = Math.round(subtotalItems * 100) / 100;
+  const totalShipping = Math.round(Math.max(0, totalSpent - subtotalItems) * 100) / 100;
+
   return {
     loaded: true,
     total_spent: Math.round(totalSpent * 100) / 100,
+    subtotal_items: subtotalItems,
+    total_shipping: totalShipping,
     currency,
     orders_count: ordersList.length,
     items_count: itemsList.length,

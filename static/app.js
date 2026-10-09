@@ -3725,14 +3725,19 @@ async function loadInferencesTab() {
       const merchBadge = document.getElementById("payments-merch-badge");
       if (merchBox && merchList && payData.merch_items && payData.merch_items.length) {
         merchBox.classList.remove("hidden");
-        if (merchBadge) merchBadge.textContent = `${payData.merch_items.length} Artikel (${payData.merch_spent} ${payData.merch_currency})`;
+        if (merchBadge) {
+          merchBadge.textContent = `${payData.merch_items.length} Artikel (Gesamt inkl. Versand: ${payData.merch_spent} ${payData.merch_currency})`;
+        }
         merchList.innerHTML = payData.merch_items.map(item => `
-          <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0.75rem; display:flex; align-items:center; gap:0.75rem;">
-            <div style="font-size:1.6rem; line-height:1; flex-shrink:0;">💿</div>
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0.85rem; display:flex; align-items:center; gap:0.85rem;">
+            <div style="font-size:1.8rem; line-height:1; flex-shrink:0;">💿</div>
             <div style="flex:1; min-width:0;">
-              <div style="font-weight:600; color:var(--text); font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.title}">${item.title}</div>
-              <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--muted); margin-top:0.25rem;">
-                <span style="color:var(--green); font-weight:700;">${item.amount} ${item.currency}</span>
+              <div style="font-weight:600; color:var(--text); font-size:0.88rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.title}">${item.title}</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem; font-size:0.75rem; color:var(--muted); margin-top:0.35rem;">
+                <div>
+                  <span style="color:var(--green); font-weight:700;">${item.amount} ${item.currency}</span>
+                  ${item.order_total && item.order_total !== item.amount ? `<span style="margin-left:0.4rem; color:var(--muted); font-size:0.72rem;">(inkl. Versand &amp; Steuern: <strong>${item.order_total} ${item.currency}</strong>)</span>` : ''}
+                </div>
                 <span>${item.date || 'Bestellung'} · <span style="color:#5b8def;">Erfüllt &amp; Bezahlt</span></span>
               </div>
             </div>
