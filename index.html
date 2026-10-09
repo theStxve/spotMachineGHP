@@ -1549,10 +1549,17 @@
           <strong style="font-size:0.9rem;"><i data-lucide="refresh-cw" style="width:14px;height:14px;color:var(--green);"></i> Live Stream-Sync</strong>
           <span id="sync-status-badge" style="font-size:0.75rem; color:var(--muted);">Bereit</span>
         </div>
-        <p id="sync-latest-info" style="font-size:0.8rem; color:var(--muted); margin-bottom:0.75rem;">Lade aktuellen Stand...</p>
-        <button id="modal-sync-btn" class="btn btn-primary" style="width:100%; font-size:0.85rem; padding:0.5rem;">
+        <div id="sync-latest-info" style="font-size:0.8rem; color:var(--muted); margin-bottom:0.75rem;">Lade aktuellen Stand...</div>
+        <button id="modal-sync-btn" class="btn btn-primary" style="width:100%; font-size:0.85rem; padding:0.5rem; display:flex; align-items:center; justify-content:center; gap:0.4rem;">
           <i data-lucide="download-cloud"></i> Neue Streams jetzt abrufen
         </button>
+        <div id="sync-recent-container" class="hidden" style="margin-top:0.85rem; border-top:1px solid var(--border); padding-top:0.75rem;">
+          <div style="font-size:0.74rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+            <span><i data-lucide="list-music" style="width:12px;height:12px;vertical-align:middle;"></i> Zuletzt synchronisierte Streams</span>
+            <span id="sync-recent-count" style="color:var(--green); font-weight:700;"></span>
+          </div>
+          <div id="sync-recent-list" style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:0.4rem;"></div>
+        </div>
       </div>
       
       <!-- Datenqualität: auffällige Zeitstempel -->

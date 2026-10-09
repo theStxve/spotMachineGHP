@@ -890,14 +890,27 @@ async function refreshLatestStreamInfo() {
     const infoEl = document.getElementById("sync-latest-info");
     if(!infoEl) return;
     if(!state.dataLoaded) {
-        infoEl.textContent = "Erst Spotify-Daten hochladen, um den Sync-Startpunkt zu bestimmen.";
+        infoEl.innerHTML = `<span style="color:var(--muted); font-size:0.8rem;">Erst Spotify-Daten hochladen, um den Sync-Startpunkt zu bestimmen.</span>`;
         return;
     }
     const data = await apiCall("/api/lastfm/latest_stream");
     if(data && data.track) {
-        infoEl.innerHTML = `Letzter bekannter Song:<br><strong style="color:var(--text);">${data.track}</strong> (${data.artist})<br><span style="color:var(--green); font-size:0.75rem;">Stand: ${data.timestamp_formatted}</span>`;
+        const qStr = `${data.artist} ${data.track}`.replace(/"/g, "&quot;");
+        infoEl.innerHTML = `
+            <div style="display:flex; align-items:center; gap:0.65rem; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px; padding:0.45rem 0.6rem; margin-bottom:0.75rem;">
+                <div class="cover-box" data-query="${qStr}" style="width:38px; height:38px; border-radius:4px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1.1rem; overflow:hidden; flex-shrink:0;">
+                    🎵
+                </div>
+                <div style="flex:1; min-width:0; overflow:hidden;">
+                    <div style="font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px;">Letzter bekannter Stream:</div>
+                    <strong style="color:var(--text); font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">${data.track}</strong>
+                    <div style="font-size:0.75rem; color:var(--green); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${data.artist} · ${data.timestamp_formatted}</div>
+                </div>
+            </div>
+        `;
+        infoEl.querySelectorAll(".cover-box").forEach(el => _loadCoverArt(el));
     } else {
-        infoEl.textContent = "Kein bisheriger Stream im Speicher.";
+        infoEl.innerHTML = `<span style="color:var(--muted); font-size:0.8rem;">Kein bisheriger Stream im Speicher.</span>`;
     }
 }
 
@@ -986,6 +999,10 @@ async function executeLastFmSync() {
         return;
     }
 
+    if(res.total_streams) {
+        state.totalStreams = res.total_streams;
+    }
+
     if(res.years) {
         state.years = res.years;
         updateYearSelects();
@@ -999,16 +1016,49 @@ async function executeLastFmSync() {
     const badge = document.getElementById("sync-status-badge");
     if(badge) {
         badge.textContent = `+${res.added_count} Streams`;
-        badge.style.color = "var(--green)";
+        badge.style.color = res.added_count > 0 ? "var(--green)" : "var(--muted)";
     }
 
-    let detailMsg = res.message;
+    const recentContainer = document.getElementById("sync-recent-container");
+    const recentList = document.getElementById("sync-recent-list");
+    const recentCount = document.getElementById("sync-recent-count");
+
     if (res.added_count > 0 && res.recent_added && res.recent_added.length > 0) {
-        detailMsg += "\n\nZuletzt hinzugefügt:\n" + res.recent_added.map(t => `• ${t.artist} - ${t.track}`).join("\n");
-    } else if (res.added_count === 0) {
-        detailMsg += "\n\nHinweis: Spotify übermittelt Songs an Last.fm erst NACHDEM sie zu Ende gehört wurden. Aktuell laufende Songs werden daher erst nach dem Trackende geloggt.";
+        if (recentContainer) recentContainer.classList.remove("hidden");
+        if (recentCount) recentCount.textContent = `+${res.added_count} neu geloggt`;
+        if (recentList) {
+            recentList.innerHTML = res.recent_added.map(t => {
+                const safeTrack = (t.track || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                const safeArtist = (t.artist || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                const qStr = `${t.artist} ${t.track}`.replace(/"/g, "&quot;");
+                return `
+                <div style="display:flex; align-items:center; gap:0.6rem; padding:0.4rem 0.55rem; background:var(--surface); border:1px solid var(--border); border-radius:6px; cursor:pointer; transition:all 0.15s;"
+                     onmouseover="this.style.background='var(--surface2)'; this.style.borderColor='var(--green)';" 
+                     onmouseout="this.style.background='var(--surface)'; this.style.borderColor='var(--border)';"
+                     onclick="openSongDetail('${safeTrack}','${safeArtist}')" title="Klicke für Song-Details">
+                    <div class="cover-box" data-uri="${t.uri || ''}" data-query="${qStr}" style="width:34px; height:34px; border-radius:4px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:1rem; overflow:hidden; flex-shrink:0;">
+                        🎵
+                    </div>
+                    <div style="flex:1; min-width:0; overflow:hidden;">
+                        <strong style="color:var(--text); font-size:0.83rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">${t.track}</strong>
+                        <span style="color:var(--muted); font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">${t.artist}</span>
+                    </div>
+                    <div style="text-align:right; font-size:0.72rem; color:var(--muted); white-space:nowrap; flex-shrink:0;">
+                        ${t.ts || ""}
+                    </div>
+                </div>
+                `;
+            }).join("");
+            recentList.querySelectorAll(".cover-box").forEach(el => _loadCoverArt(el));
+        }
+        showToast(`+${res.added_count} neue Streams erfolgreich von Last.fm synchronisiert!`);
+    } else {
+        if (recentContainer && (!res.recent_added || res.recent_added.length === 0)) {
+            recentContainer.classList.add("hidden");
+        }
+        showToast(res.message || "Alles aktuell! (0 neue Streams)");
     }
-    alert(detailMsg);
+    lucide.createIcons();
 }
 
 document.getElementById("header-sync-btn")?.addEventListener("click", executeLastFmSync);

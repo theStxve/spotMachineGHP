@@ -377,12 +377,22 @@ export async function handleRequest(method, url, body, query) {
     await saveCache({ profile: getSettings().profile });
     const years = get_available_years(merged.df);
     const sample = [];
-    const tailCount = Math.min(5, newTracks.length);
-    for (let i = newTracks.length - tailCount; i < newTracks.length; i++) {
+    const count = Math.min(10, newTracks.length);
+    for (let i = 0; i < count; i++) {
+      const t = newTracks[i];
+      let tsStr = "";
+      try {
+        const d = new Date(t.ts);
+        tsStr = d.toLocaleDateString("de-DE") + " um " + d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr";
+      } catch (e) {
+        tsStr = t.ts || "";
+      }
       sample.push({
-        track: newTracks[i].master_metadata_track_name,
-        artist: newTracks[i].master_metadata_album_artist_name,
-        ts: newTracks[i].ts,
+        track: t.master_metadata_track_name,
+        artist: t.master_metadata_album_artist_name,
+        album: t.master_metadata_album_album_name || "",
+        ts: tsStr,
+        uri: t.spotify_track_uri || "",
       });
     }
     return {
