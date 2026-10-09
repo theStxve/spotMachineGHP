@@ -199,14 +199,30 @@ export function parseJsonArray(text) {
 export async function extractZip(file) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const entries = unzipSync(buf);
-  const out = [];
+  const history = [];
+  const account = {};
+  const decoder = new TextDecoder();
   for (const [name, data] of Object.entries(entries)) {
     if (name.endsWith("/")) continue;
     if (!/\.json$/i.test(name)) continue;
-    if (!/Streaming_History/i.test(name)) continue;
-    out.push({ name, bytes: data });
+    const base = name.split("/").pop().toLowerCase();
+    if (/Streaming_History/i.test(base) || /endsong/i.test(base) || /StreamingHistory/i.test(base)) {
+      history.push({ name, bytes: data });
+    } else if (
+      base.includes("searchqueries") || base.includes("search_queries") ||
+      base.includes("inferences") ||
+      base.includes("yourlibrary") || base.includes("library") ||
+      base.includes("playlist") ||
+      base.includes("payments") || base.includes("payment") ||
+      base.includes("userdata") || base.includes("user_data") ||
+      base.includes("follow")
+    ) {
+      try {
+        account[base] = JSON.parse(decoder.decode(data));
+      } catch (e) {}
+    }
   }
-  return out;
+  return { history, account };
 }
 
 /** Dateinamen, die als Spotify-History durchgehen. */

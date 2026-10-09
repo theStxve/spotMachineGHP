@@ -23,7 +23,7 @@ const KNOWN_PATHS = [
   "/api/top_songs",
 ];
 
-const KNOWN_PREFIXES = ["/api/heatmap/cell", "/api/lastfm/"];
+const KNOWN_PREFIXES = ["/api/heatmap/cell", "/api/lastfm/", "/api/account/"];
 
 function isLocalRoute(path) {
   if (KNOWN_PATHS.includes(path)) return true;

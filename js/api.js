@@ -11,7 +11,11 @@ import {
   loadFiles, setIncludeOutliers, getQuality, getSettings, setSettings, applyTimeMode,
   setOnlyMusic, getMedia, setArtistBlacklist, getBlacklist, setYears, getYearScope,
   setYearsExcluded, getYearExclusion, appendStreams,
+  getAccountData, getAccountStatus,
 } from "./core/store.js";
+import {
+  analyzeSearches, analyzeInferences, analyzeLibrary, analyzePlaylists, analyzePayments,
+} from "./analytics/account.js";
 import { get_available_years, get_all_artists, recommend } from "./analytics/core.js";
 import { get_top_songs } from "./analytics/topsongs.js";
 import {
@@ -74,6 +78,7 @@ export async function handleRequest(method, url, body, query) {
       media: mediaInfo,
       blacklist: getBlacklist(),
       year_scope: getYearScope(),
+      account_status: getAccountStatus(),
       cache_saved: saved.ok,
       cache_error: saved.ok ? null : saved.reason,
     };
@@ -156,7 +161,7 @@ export async function handleRequest(method, url, body, query) {
   }
 
   if (path === "/api/session_status" && method === "GET") {
-    if (!hasData()) return { loaded: false };
+    if (!hasData()) return { loaded: false, account_status: getAccountStatus() };
     const df = getFrame();
     return {
       loaded: true,
@@ -169,13 +174,42 @@ export async function handleRequest(method, url, body, query) {
       blacklist: getBlacklist(),
       year_exclusion: getYearExclusion(),
       year_scope: getYearScope(),
+      account_status: getAccountStatus(),
     };
   }
 
   // Im Browser gibt es keinen Server, der etwas loeschen koennte - die
   // Endpunkte existieren nur, damit das Frontend keinen Fehler sieht.
   if (path === "/api/heartbeat" || path === "/api/disconnect") return { ok: true };
-  if (path.startsWith("/api/account/")) return { loaded: false };
+
+  // ── Account Analytics (ZIP Datensätze) ──────────────────────────────────
+  if (path === "/api/account/status" && method === "GET") {
+    return getAccountStatus();
+  }
+
+  if (path === "/api/account/searches" && method === "GET") {
+    const frame = hasData() ? getFrame() : null;
+    return analyzeSearches(getAccountData().searches, frame);
+  }
+
+  if (path === "/api/account/inferences" && method === "GET") {
+    return analyzeInferences(getAccountData().inferences, getAccountData().userdata);
+  }
+
+  if (path === "/api/account/library" && method === "GET") {
+    const frame = hasData() ? getFrame() : null;
+    return analyzeLibrary(getAccountData().library, frame);
+  }
+
+  if (path === "/api/account/playlists" && method === "GET") {
+    const frame = hasData() ? getFrame() : null;
+    return analyzePlaylists(getAccountData().playlists, frame);
+  }
+
+  if (path === "/api/account/payments" && method === "GET") {
+    const frame = hasData() ? getFrame() : null;
+    return analyzePayments(getAccountData().payments, frame);
+  }
 
   // ── Empfehlungen & Grunddaten ─────────────────────────────────────────────
   if (path === "/recommend" && method === "POST") {

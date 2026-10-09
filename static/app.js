@@ -3480,3 +3480,398 @@ checkExistingSession().then(startHeartbeat);
 
 // ── INIT ──
 lucide.createIcons();
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ── MODULE: Account Data Analytics (SearchQueries, Inferences, Library, etc.) ─
+// ═════════════════════════════════════════════════════════════════════════════
+
+let _searchesRawData = null;
+let _inferencesRawData = null;
+let _libraryRawData = null;
+
+// ── 1. SUCHANFRAGEN TAB ──
+async function loadSearchesTab() {
+  const emptyState = document.getElementById("searches-empty-state");
+  const content = document.getElementById("searches-content");
+  showLoader("Lade Suchanfragen...");
+  try {
+    const data = await apiCall("/api/account/searches");
+    hideLoader();
+
+    if (!data || !data.loaded) {
+      if (emptyState) emptyState.classList.remove("hidden");
+      if (content) content.classList.add("hidden");
+      lucide.createIcons();
+      return;
+    }
+
+    _searchesRawData = data;
+    if (emptyState) emptyState.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+
+    // Stats
+    const totalEl = document.getElementById("searches-total");
+    if (totalEl) totalEl.textContent = (data.total_searches || 0).toLocaleString();
+    const uniqEl = document.getElementById("searches-unique");
+    if (uniqEl) uniqEl.textContent = (data.unique_queries || 0).toLocaleString();
+    const rateEl = document.getElementById("searches-rate");
+    if (rateEl) rateEl.textContent = (data.interaction_rate || 0) + "%";
+    const platEl = document.getElementById("searches-top-platform");
+    if (platEl) platEl.textContent = (data.platforms && data.platforms[0]) ? data.platforms[0].platform : "-";
+
+    // Charts
+    _renderSearchesCharts(data);
+
+    // Geister-Suchen
+    const ghostChips = document.getElementById("searches-ghost-chips");
+    const ghostCard = document.getElementById("searches-ghost-card");
+    if (ghostChips) {
+      if (data.ghost_searches && data.ghost_searches.length > 0) {
+        if (ghostCard) ghostCard.classList.remove("hidden");
+        ghostChips.innerHTML = data.ghost_searches.map(g => `
+          <span class="tag-pill" style="border-color:rgba(229,83,75,0.4); color:#e5534b; background:rgba(229,83,75,0.1); padding:0.3rem 0.6rem; font-size:0.8rem; display:inline-flex; align-items:center; gap:0.35rem;">
+            ${g.query} <strong style="opacity:0.75; font-size:0.72rem;">${g.count}x</strong>
+          </span>
+        `).join("");
+      } else {
+        if (ghostCard) ghostCard.classList.add("hidden");
+      }
+    }
+
+    // Top Suchen Chips
+    const topChips = document.getElementById("searches-top-chips");
+    if (topChips && data.top_queries) {
+      topChips.innerHTML = data.top_queries.slice(0, 25).map(q => `
+        <span class="tag-pill" style="cursor:pointer;" onclick="filterSearchesTable('${q.query.replace(/'/g, "\\'")}')">
+          ${q.query} <span style="opacity:0.6; font-size:0.72rem; margin-left:0.25rem;">${q.count}</span>
+        </span>
+      `).join("");
+    }
+
+    // Table render
+    _renderSearchesTable(data.recent_searches || []);
+    lucide.createIcons();
+  } catch (e) {
+    hideLoader();
+    console.error("Error loading searches:", e);
+    if (emptyState) emptyState.classList.remove("hidden");
+    if (content) content.classList.add("hidden");
+    lucide.createIcons();
+  }
+}
+
+function _renderSearchesCharts(data) {
+  // 1. Hours Chart (0-23)
+  const hourCtx = document.getElementById("searches-hour-chart");
+  if (hourCtx && typeof Chart !== "undefined") {
+    if (state.charts["searches-hour"]) state.charts["searches-hour"].destroy();
+    const hourLabels = Array.from({length: 24}, (_, i) => `${i}h`);
+    state.charts["searches-hour"] = new Chart(hourCtx, {
+      type: "bar",
+      data: {
+        labels: hourLabels,
+        datasets: [{
+          label: "Suchanfragen",
+          data: data.hour_counts || [],
+          backgroundColor: "#1db954",
+          borderRadius: 3
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: "#1a1a1a" }, ticks: { color: "#666", font: { size: 9 } } },
+          y: { grid: { color: "#1a1a1a" }, ticks: { color: "#666", font: { size: 9 } } }
+        }
+      }
+    });
+  }
+
+  // 2. Weekday Chart
+  const wdCtx = document.getElementById("searches-weekday-chart");
+  if (wdCtx && typeof Chart !== "undefined") {
+    if (state.charts["searches-weekday"]) state.charts["searches-weekday"].destroy();
+    state.charts["searches-weekday"] = new Chart(wdCtx, {
+      type: "bar",
+      data: {
+        labels: data.weekday_labels || ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+        datasets: [{
+          label: "Suchanfragen",
+          data: data.weekday_counts || [],
+          backgroundColor: "rgba(29,185,84,0.75)",
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: "#1a1a1a" }, ticks: { color: "#666" } },
+          y: { grid: { color: "#1a1a1a" }, ticks: { color: "#666" } }
+        }
+      }
+    });
+  }
+}
+
+function _renderSearchesTable(items) {
+  const tbody = document.getElementById("searches-table-body");
+  if (!tbody) return;
+  if (!items || !items.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine passenden Suchen gefunden.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.slice(0, 150).map(s => `
+    <tr>
+      <td style="color:var(--muted); font-size:0.76rem; font-family:monospace;">${s.time}</td>
+      <td style="font-weight:600; color:var(--text);">${s.query}</td>
+      <td style="color:var(--muted);">${s.platform}</td>
+      <td>
+        ${s.has_interaction ? '<span style="color:var(--green); display:inline-flex; align-items:center; gap:0.2rem;"><i data-lucide="check-circle-2" style="width:12px;height:12px;"></i> Klick</span>' : '<span style="color:var(--muted);">Kein Klick</span>'}
+      </td>
+    </tr>
+  `).join("");
+  lucide.createIcons();
+}
+
+function filterSearchesTable(query) {
+  const input = document.getElementById("searches-filter-input");
+  if (input) {
+    input.value = query;
+    input.dispatchEvent(new Event("input"));
+  }
+}
+
+document.getElementById("searches-filter-input")?.addEventListener("input", (e) => {
+  const filter = e.target.value.toLowerCase().trim();
+  if (!_searchesRawData || !_searchesRawData.recent_searches) return;
+  const filtered = _searchesRawData.recent_searches.filter(s =>
+    s.query.toLowerCase().includes(filter) || s.platform.toLowerCase().includes(filter)
+  );
+  _renderSearchesTable(filtered);
+});
+
+
+// ── 2. GESCHMACKSPROFIL & INFERENCES TAB ──
+async function loadInferencesTab() {
+  const emptyState = document.getElementById("inferences-empty-state");
+  const content = document.getElementById("inferences-content");
+  showLoader("Lade Geschmacksprofil...");
+  try {
+    const data = await apiCall("/api/account/inferences");
+    let payData = null;
+    try { payData = await apiCall("/api/account/payments"); } catch(e) {}
+    hideLoader();
+
+    if (!data || !data.loaded) {
+      if (emptyState) emptyState.classList.remove("hidden");
+      if (content) content.classList.add("hidden");
+      lucide.createIcons();
+      return;
+    }
+
+    _inferencesRawData = data;
+    if (emptyState) emptyState.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+
+    // Stats
+    const totalEl = document.getElementById("inferences-total");
+    if (totalEl) totalEl.textContent = (data.total_inferences || 0).toLocaleString();
+    const userInfo = data.user_info || {};
+    const countryEl = document.getElementById("inferences-country");
+    if (countryEl) countryEl.textContent = userInfo.country || "DE";
+    const createdEl = document.getElementById("inferences-created");
+    if (createdEl) createdEl.textContent = userInfo.creation_time ? userInfo.creation_time.split("T")[0] : "Spotify User";
+
+    // Payments Section
+    const paySec = document.getElementById("payments-section");
+    if (payData && payData.loaded) {
+      if (paySec) paySec.classList.remove("hidden");
+      const totSpentEl = document.getElementById("payments-total-spent");
+      if (totSpentEl) totSpentEl.textContent = `${payData.total_spent} ${payData.currency}`;
+      const hrRateEl = document.getElementById("payments-hour-rate");
+      if (hrRateEl) hrRateEl.textContent = payData.cost_per_hour !== null ? `${payData.cost_per_hour} € / h` : "-";
+      const stRateEl = document.getElementById("payments-stream-rate");
+      if (stRateEl) stRateEl.textContent = payData.cost_per_stream_cents !== null ? `${payData.cost_per_stream_cents} Cent / Stream` : "-";
+      const costHourEl = document.getElementById("inferences-cost-per-hour");
+      if (costHourEl) costHourEl.textContent = payData.cost_per_hour !== null ? `${payData.cost_per_hour} € / h` : "-";
+    } else {
+      if (paySec) paySec.classList.add("hidden");
+      const costHourEl = document.getElementById("inferences-cost-per-hour");
+      if (costHourEl) costHourEl.textContent = "-";
+    }
+
+    // Categories & Tags
+    _renderInferencesCategories(data.categories || []);
+    lucide.createIcons();
+  } catch (e) {
+    hideLoader();
+    console.error("Error loading inferences:", e);
+    if (emptyState) emptyState.classList.remove("hidden");
+    if (content) content.classList.add("hidden");
+    lucide.createIcons();
+  }
+}
+
+function _renderInferencesCategories(categories, filter = "") {
+  const container = document.getElementById("inferences-categories-container");
+  if (!container) return;
+  const filterLower = filter.toLowerCase().trim();
+
+  let html = "";
+  for (const cat of categories) {
+    const matchingTags = filterLower ? cat.tags.filter(t => t.toLowerCase().includes(filterLower)) : cat.tags;
+    if (filterLower && matchingTags.length === 0) continue;
+
+    html += `
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+          <strong style="font-size:0.95rem; color:var(--text);">${cat.category}</strong>
+          <span style="font-size:0.75rem; color:var(--muted);">${matchingTags.length} Tags</span>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+          ${matchingTags.map(t => `
+            <span class="tag-pill" style="font-size:0.78rem; padding:0.25rem 0.55rem; background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12);">
+              ${t}
+            </span>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  if (!html) {
+    html = '<div style="color:var(--muted); text-align:center; padding:2rem;">Keine passenden Tags gefunden.</div>';
+  }
+  container.innerHTML = html;
+}
+
+document.getElementById("inferences-tag-search")?.addEventListener("input", (e) => {
+  if (!_inferencesRawData || !_inferencesRawData.categories) return;
+  _renderInferencesCategories(_inferencesRawData.categories, e.target.value);
+});
+
+
+// ── 3. BIBLIOTHEK & PLAYLISTS TAB ──
+async function loadLibraryTab() {
+  const emptyState = document.getElementById("library-empty-state");
+  const content = document.getElementById("library-content");
+  showLoader("Lade Bibliothek & Playlists...");
+  try {
+    let libData = null;
+    let plData = null;
+    try { libData = await apiCall("/api/account/library"); } catch(e) {}
+    try { plData = await apiCall("/api/account/playlists"); } catch(e) {}
+    hideLoader();
+
+    const hasAny = (libData && libData.loaded) || (plData && plData.loaded);
+    if (!hasAny) {
+      if (emptyState) emptyState.classList.remove("hidden");
+      if (content) content.classList.add("hidden");
+      lucide.createIcons();
+      return;
+    }
+
+    if (emptyState) emptyState.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+
+    // Stats
+    const trEl = document.getElementById("library-tracks-count");
+    if (trEl) trEl.textContent = (libData && libData.loaded) ? (libData.tracks_count || 0).toLocaleString() : "-";
+    const albEl = document.getElementById("library-albums-count");
+    if (albEl) albEl.textContent = (libData && libData.loaded) ? (libData.albums_count || 0).toLocaleString() : "-";
+    const plEl = document.getElementById("library-playlists-count");
+    if (plEl) plEl.textContent = (plData && plData.loaded) ? (plData.total_playlists || 0).toLocaleString() : "-";
+    const graveEl = document.getElementById("library-graveyard-count");
+    if (graveEl) graveEl.textContent = (libData && libData.loaded) ? (libData.graveyard_count || 0).toLocaleString() : "0";
+
+    // 1. Graveyard Table
+    const graveTbody = document.getElementById("library-graveyard-tbody");
+    if (graveTbody) {
+      if (libData && libData.loaded && libData.graveyard_tracks && libData.graveyard_tracks.length > 0) {
+        graveTbody.innerHTML = libData.graveyard_tracks.map(t => `
+          <tr>
+            <td style="font-weight:600; color:var(--text);">${t.track}</td>
+            <td style="color:var(--muted);">${t.artist}</td>
+            <td style="color:var(--muted); font-size:0.76rem;">${t.album || "-"}</td>
+            <td>
+              <span style="display:inline-block; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; font-weight:600; ${t.streams === 0 ? "background:rgba(229,83,75,0.15); color:#e5534b;" : "background:rgba(255,193,7,0.15); color:#ffc107;"}">
+                ${t.status || t.streams + " Plays"}
+              </span>
+            </td>
+          </tr>
+        `).join("");
+      } else {
+        graveTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine Friedhof-Tracks gefunden! Du hörst offenbar alles, was du speicherst.</td></tr>';
+      }
+    }
+
+    // 2. Ghost Hits Table
+    const ghostTbody = document.getElementById("library-ghosthits-tbody");
+    if (ghostTbody) {
+      if (libData && libData.loaded && libData.ghost_hits && libData.ghost_hits.length > 0) {
+        ghostTbody.innerHTML = libData.ghost_hits.map(t => `
+          <tr>
+            <td style="font-weight:600; color:var(--text);">${t.track}</td>
+            <td style="color:var(--muted);">${t.artist}</td>
+            <td><strong style="color:var(--green);">${t.streams}</strong> Streams</td>
+          </tr>
+        `).join("");
+      } else {
+        ghostTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--muted); padding:1.5rem;">Keine Geister-Hits gefunden.</td></tr>';
+      }
+    }
+
+    // 3. Playlists Section
+    const plSec = document.getElementById("playlists-section");
+    const plGrid = document.getElementById("playlists-grid");
+    if (plData && plData.loaded && plData.playlists) {
+      if (plSec) plSec.classList.remove("hidden");
+      if (plGrid) {
+        plGrid.innerHTML = plData.playlists.slice(0, 16).map(p => `
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0.85rem;">
+            <div style="font-weight:600; color:var(--text); font-size:0.9rem; margin-bottom:0.25rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${p.name}">
+              ${p.name}
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--muted); margin-bottom:0.4rem;">
+              <span>${p.track_count} Tracks</span>
+              ${p.followers ? `<span>${p.followers} Follower</span>` : ""}
+            </div>
+            ${p.top_artists && p.top_artists.length ? `<div style="font-size:0.72rem; color:var(--muted); opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.top_artists.join(", ")}</div>` : ""}
+          </div>
+        `).join("");
+      }
+
+      // Duplicates
+      const dupCard = document.getElementById("playlists-duplicates-card");
+      const dupList = document.getElementById("playlists-duplicates-list");
+      if (dupCard && dupList) {
+        if (plData.duplicates && plData.duplicates.length > 0) {
+          dupCard.classList.remove("hidden");
+          dupList.innerHTML = plData.duplicates.slice(0, 15).map(d => `
+            <div style="font-size:0.8rem; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px; padding:0.4rem 0.6rem; display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+              <span style="font-weight:600; color:var(--text);">${d.song}</span>
+              <span style="font-size:0.72rem; color:var(--muted);">In: ${d.playlists.join(", ")}</span>
+            </div>
+          `).join("");
+        } else {
+          dupCard.classList.add("hidden");
+        }
+      }
+    } else {
+      if (plSec) plSec.classList.add("hidden");
+    }
+
+    lucide.createIcons();
+  } catch (e) {
+    hideLoader();
+    console.error("Error loading library:", e);
+    if (emptyState) emptyState.classList.remove("hidden");
+    if (content) content.classList.add("hidden");
+    lucide.createIcons();
+  }
+}

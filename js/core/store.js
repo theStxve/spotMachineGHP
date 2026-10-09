@@ -22,6 +22,37 @@ let quality = null;       // { outliers, dropped, includeOutliers }
 let meta = { years: [], total: 0, savedAt: null, fileNames: [] };
 let settings = { tz_mode: "utc", profile: "", tz: "", only_music: false, artist_blacklist: [], years: [], years_excluded: [] };
 let media = { music: 0, podcast: 0, audiobook: 0, hidden: 0, total: 0 };
+let accountData = {
+  searches: [],
+  inferences: [],
+  library: {},
+  playlists: [],
+  payments: [],
+  userdata: {},
+  follow: {},
+};
+
+export function getAccountData() {
+  return accountData;
+}
+
+export function getAccountStatus() {
+  return {
+    has_searches: accountData.searches.length > 0,
+    searches_count: accountData.searches.length,
+    has_inferences: accountData.inferences.length > 0,
+    inferences_count: accountData.inferences.length,
+    has_library: Boolean(
+      (accountData.library.tracks && accountData.library.tracks.length) ||
+      (accountData.library.albums && accountData.library.albums.length)
+    ),
+    library_tracks_count: (accountData.library.tracks && accountData.library.tracks.length) || 0,
+    has_playlists: accountData.playlists.length > 0,
+    playlists_count: accountData.playlists.length,
+    has_payments: accountData.payments.length > 0,
+    payments_count: accountData.payments.length,
+  };
+}
 
 /** Schaltet den Medienfilter um (nur Musik bzw. alles). */
 export function setOnlyMusic(onlyMusic) {
@@ -624,7 +655,30 @@ export async function loadFiles(files, onProgress = () => {}) {
   for (const file of files) {
     names.push(file.name);
     if (/\.zip$/i.test(file.name)) {
-      const entries = await extractZip(file);
+      const res = await extractZip(file);
+      const entries = res.history || [];
+      const acc = res.account || {};
+      for (const [k, v] of Object.entries(acc)) {
+        if (k.includes("search")) {
+          if (Array.isArray(v)) accountData.searches.push(...v);
+          else if (v && Array.isArray(v.searchQueries)) accountData.searches.push(...v.searchQueries);
+        } else if (k.includes("inference")) {
+          if (Array.isArray(v)) accountData.inferences.push(...v);
+          else if (v && Array.isArray(v.inferences)) accountData.inferences.push(...v.inferences);
+        } else if (k.includes("library")) {
+          if (typeof v === "object") accountData.library = v;
+        } else if (k.includes("playlist")) {
+          if (Array.isArray(v)) accountData.playlists.push(...v);
+          else if (v && Array.isArray(v.playlists)) accountData.playlists.push(...v.playlists);
+        } else if (k.includes("payment")) {
+          if (Array.isArray(v)) accountData.payments.push(...v);
+          else if (v && Array.isArray(v.payments)) accountData.payments.push(...v.payments);
+        } else if (k.includes("userdata")) {
+          if (typeof v === "object") accountData.userdata = v;
+        } else if (k.includes("follow")) {
+          if (typeof v === "object") accountData.follow = v;
+        }
+      }
       for (const entry of entries) {
         ingestRecords(builder, JSON.parse(decoder.decode(entry.bytes)));
         fromZip += 1;
@@ -641,7 +695,33 @@ export async function loadFiles(files, onProgress = () => {}) {
         }
       }
     } else if (/\.json$/i.test(file.name)) {
-      ingestRecords(builder, JSON.parse(await file.text()));
+      const base = file.name.toLowerCase();
+      if (/Streaming_History/i.test(base) || /endsong/i.test(base) || /StreamingHistory/i.test(base)) {
+        ingestRecords(builder, JSON.parse(await file.text()));
+      } else {
+        try {
+          const v = JSON.parse(await file.text());
+          if (base.includes("search")) {
+            if (Array.isArray(v)) accountData.searches.push(...v);
+            else if (v && Array.isArray(v.searchQueries)) accountData.searches.push(...v.searchQueries);
+          } else if (base.includes("inference")) {
+            if (Array.isArray(v)) accountData.inferences.push(...v);
+            else if (v && Array.isArray(v.inferences)) accountData.inferences.push(...v.inferences);
+          } else if (base.includes("library")) {
+            if (typeof v === "object") accountData.library = v;
+          } else if (base.includes("playlist")) {
+            if (Array.isArray(v)) accountData.playlists.push(...v);
+            else if (v && Array.isArray(v.playlists)) accountData.playlists.push(...v.playlists);
+          } else if (base.includes("payment")) {
+            if (Array.isArray(v)) accountData.payments.push(...v);
+            else if (v && Array.isArray(v.payments)) accountData.payments.push(...v.payments);
+          } else if (base.includes("userdata")) {
+            if (typeof v === "object") accountData.userdata = v;
+          } else if (base.includes("follow")) {
+            if (typeof v === "object") accountData.follow = v;
+          }
+        } catch (e) {}
+      }
       done += 1;
       onProgress(done / total, file.name);
     }
