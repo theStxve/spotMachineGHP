@@ -175,6 +175,7 @@ export async function handleRequest(method, url, body, query) {
   // Im Browser gibt es keinen Server, der etwas loeschen koennte - die
   // Endpunkte existieren nur, damit das Frontend keinen Fehler sieht.
   if (path === "/api/heartbeat" || path === "/api/disconnect") return { ok: true };
+  if (path.startsWith("/api/account/")) return { loaded: false };
 
   // ── Empfehlungen & Grunddaten ─────────────────────────────────────────────
   if (path === "/recommend" && method === "POST") {

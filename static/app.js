@@ -160,6 +160,9 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (state.activeTab === 'albums') loadAlbums();
     if (state.activeTab === 'discover') loadDiscoverTimeline();
     if (state.activeTab === 'behavior') document.getElementById('behavior-btn').click();
+    if (state.activeTab === 'searches') loadSearchesTab();
+    if (state.activeTab === 'inferences') loadInferencesTab();
+    if (state.activeTab === 'library') loadLibraryTab();
   });
 });
 
@@ -390,6 +393,7 @@ uploadBtn.addEventListener("click", async () => {
         state.totalStreams = data.total_streams;
         if(data.year_scope) state.yearScope = data.year_scope;
         state.dataLoaded = true;
+        if(data && data.account_status) state.accountStatus = data.account_status;
         updateYearSelects();
         document.getElementById("upload-section").classList.add("hidden");
         document.getElementById("tab-nav").classList.remove("hidden");
@@ -636,6 +640,7 @@ async function saveSettings(patch, onDone) {
     if(res.blacklist) renderBlacklist(res.blacklist);
     if(res.total_streams !== undefined) state.totalStreams = res.total_streams;
     if(res.year_scope) state.yearScope = res.year_scope;
+            if(res.account_status) state.accountStatus = res.account_status;
     if(res.years && res.years.length) {
         state.years = res.years;
         updateYearSelects();
@@ -850,6 +855,7 @@ if(outliersToggle) {
             state.years = res.years || state.years;
             if(res.total_streams !== undefined) state.totalStreams = res.total_streams;
             if(res.year_scope) state.yearScope = res.year_scope;
+            if(res.account_status) state.accountStatus = res.account_status;
             updateYearSelects();
             applyQuality(res.quality);
             showToast(outliersToggle.checked
@@ -3405,7 +3411,9 @@ async function checkExistingSession() {
             state.years = res.years;
             state.totalStreams = res.total_streams;
             if(res.year_scope) state.yearScope = res.year_scope;
+            if(res.account_status) state.accountStatus = res.account_status;
             state.dataLoaded = true;
+        if(data && data.account_status) state.accountStatus = data.account_status;
             if (res.year_exclusion) renderYearExclusion(res.year_exclusion);
             updateYearSelects();
             refreshYearDropdowns();
